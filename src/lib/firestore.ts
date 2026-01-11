@@ -63,8 +63,23 @@ export async function updateProject(projectId: string, data: Partial<Project>): 
 }
 
 export async function deleteProject(projectId: string): Promise<void> {
-    const docRef = doc(db, 'projects', projectId);
-    await deleteDoc(docRef);
+    // Cascade delete: delete all tasks associated with this project first
+    const tasksRef = collection(db, 'tasks');
+    const q = query(tasksRef, where('projectId', '==', projectId));
+    const snapshot = await getDocs(q);
+
+    const batch = writeBatch(db);
+
+    // Delete all tasks
+    snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+    });
+
+    // Delete the project
+    const projectRef = doc(db, 'projects', projectId);
+    batch.delete(projectRef);
+
+    await batch.commit();
 }
 
 // ==================== TASKS ====================
