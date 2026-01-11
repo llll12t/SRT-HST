@@ -346,7 +346,6 @@ export default function SettingsPage() {
                     category,
                     planStartDate: start.toISOString().split('T')[0],
                     planEndDate: end.toISOString().split('T')[0],
-                    weight: 1,
                     progress,
                     status: progress === 100 ? 'completed' : progress > 0 ? 'in-progress' : 'not-started',
                     order: taskCount,
