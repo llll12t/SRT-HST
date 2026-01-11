@@ -16,6 +16,17 @@ import {
 import { db } from './firebase';
 import { Project, Task, WeeklyLog, Member } from '@/types/construction';
 
+// Helper to remove undefined values for Firestore
+const removeUndefined = (obj: any) => {
+    const newObj: any = {};
+    Object.keys(obj).forEach(key => {
+        if (obj[key] !== undefined) {
+            newObj[key] = obj[key];
+        }
+    });
+    return newObj;
+};
+
 // ==================== PROJECTS ====================
 
 export async function getProjects(): Promise<Project[]> {
@@ -127,7 +138,7 @@ export async function getTask(taskId: string): Promise<Task | null> {
 export async function createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
     const tasksRef = collection(db, 'tasks');
     const docRef = await addDoc(tasksRef, {
-        ...task,
+        ...removeUndefined(task),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp()
     });
@@ -147,7 +158,7 @@ export async function updateTask(taskId: string, data: Partial<Task>): Promise<v
 
     const docRef = doc(db, 'tasks', taskId);
     await updateDoc(docRef, {
-        ...data,
+        ...removeUndefined(data),
         updatedAt: serverTimestamp()
     });
 

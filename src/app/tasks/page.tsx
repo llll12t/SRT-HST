@@ -14,7 +14,11 @@ import {
     AlertTriangle,
     Loader2,
     X,
-    Filter
+    Filter,
+    ArrowUp,
+    ArrowDown,
+    ChevronLeft,
+    ChevronRight,
 } from 'lucide-react';
 import { Task, Project, Member } from '@/types/construction';
 import { getAllTasks, getProjects, createTask, updateTask, deleteTask, updateTaskProgress, getMembers } from '@/lib/firestore';
@@ -36,7 +40,12 @@ export default function TasksPage() {
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
     const [projectFilter, setProjectFilter] = useState('all');
     const [categoryFilter, setCategoryFilter] = useState('all');
-    const [sortBy, setSortBy] = useState<'name' | 'progress' | 'cost'>('name');
+    const [sortBy, setSortBy] = useState<'order' | 'name' | 'progress' | 'cost'>('order');
+
+    // Pagination & Loading
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage] = useState(50);
+    const [reorderingId, setReorderingId] = useState<string | null>(null);
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,7 +55,6 @@ export default function TasksPage() {
         projectId: '',
         category: '',
         name: '',
-        weight: 1, // Hidden default
         cost: 0,
         quantity: '',
         planStartDate: '',
@@ -121,6 +129,7 @@ export default function TasksPage() {
         }
 
         result.sort((a, b) => {
+            if (sortBy === 'order') return (a.order || 0) - (b.order || 0);
             if (sortBy === 'name') return a.name.localeCompare(b.name);
             if (sortBy === 'progress') return b.progress - a.progress;
             if (sortBy === 'cost') return (b.cost || 0) - (a.cost || 0);
@@ -129,6 +138,18 @@ export default function TasksPage() {
 
         return result;
     }, [tasks, searchQuery, statusFilter, projectFilter, categoryFilter, sortBy]);
+
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, statusFilter, projectFilter, categoryFilter, sortBy]);
+
+    const paginatedTasks = filteredTasks.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
+    );
+
+    const totalPages = Math.ceil(filteredTasks.length / itemsPerPage);
 
     // Stats
     const stats = useMemo(() => ({
@@ -161,6 +182,34 @@ export default function TasksPage() {
         );
     };
 
+    const handleMoveTask = async (task: Task, direction: 'up' | 'down') => {
+        if (projectFilter === 'all' || sortBy !== 'order') return;
+
+        const currentIndex = filteredTasks.findIndex(t => t.id === task.id);
+        if (currentIndex === -1) return;
+
+        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= filteredTasks.length) return;
+
+        const targetTask = filteredTasks[targetIndex];
+
+        // Ensure both have valid order values before swapping
+        const taskOrder = task.order || 0;
+        const targetOrder = targetTask.order || 0;
+
+        setReorderingId(task.id);
+        try {
+            await updateTask(task.id, { order: targetOrder });
+            await updateTask(targetTask.id, { order: taskOrder });
+            await fetchData(); // Wait for fetch
+        } catch (error) {
+            console.error('Failed to reorder tasks', error);
+            alert('เกิดข้อผิดพลาดในการจัดลำดับ');
+        } finally {
+            setReorderingId(null);
+        }
+    };
+
     // Open modal
     const openCreateModal = () => {
         setEditingTask(null);
@@ -168,7 +217,6 @@ export default function TasksPage() {
             projectId: projects[0]?.id || '',
             category: '',
             name: '',
-            weight: 1,
             cost: 0,
             quantity: '',
             planStartDate: new Date().toISOString().slice(0, 10),
@@ -186,7 +234,6 @@ export default function TasksPage() {
             projectId: task.projectId,
             category: task.category,
             name: task.name,
-            weight: task.weight || 1,
             cost: task.cost || 0,
             quantity: task.quantity || '',
             planStartDate: task.planStartDate,
@@ -213,7 +260,6 @@ export default function TasksPage() {
                     projectId: taskForm.projectId,
                     category: taskForm.category,
                     name: taskForm.name,
-                    weight: taskForm.weight,
                     cost: taskForm.cost,
                     quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
@@ -224,11 +270,14 @@ export default function TasksPage() {
                     status
                 });
             } else {
+                // Determine new order: max order in this project + 1
+                const projectTasks = tasks.filter(t => t.projectId === taskForm.projectId);
+                const maxOrder = projectTasks.reduce((max, t) => Math.max(max, t.order || 0), 0);
+
                 await createTask({
                     projectId: taskForm.projectId,
                     category: taskForm.category,
                     name: taskForm.name,
-                    weight: taskForm.weight,
                     cost: taskForm.cost,
                     quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
@@ -237,7 +286,7 @@ export default function TasksPage() {
                     progress: taskForm.progress,
                     responsible: taskForm.responsible,
                     status,
-                    order: tasks.length + 1
+                    order: maxOrder + 1
                 });
             }
 
@@ -415,6 +464,7 @@ export default function TasksPage() {
                     onChange={(e) => setSortBy(e.target.value as any)}
                     className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500"
                 >
+                    <option value="order">เรียงตามลำดับ</option>
                     <option value="name">เรียงตามชื่อ</option>
                     <option value="progress">เรียงตาม Progress</option>
                     <option value="cost">เรียงตาม Cost</option>
@@ -465,8 +515,11 @@ export default function TasksPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
-                                {filteredTasks.map((task) => (
-                                    <tr key={task.id} className="hover:bg-gray-50 transition-colors group">
+                                {paginatedTasks.map((task) => (
+                                    <tr
+                                        key={task.id}
+                                        className={`transition-colors group ${reorderingId === task.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                    >
                                         <td className="px-4 py-3">
                                             <div className="max-w-[280px]">
                                                 <p className="text-sm font-medium text-gray-900 truncate">{task.name}</p>
@@ -546,6 +599,36 @@ export default function TasksPage() {
                                                         </button>
                                                     </>
                                                 )}
+
+                                                {/* Reorder: Admin, PM - Only when filtered by project and sorted by order */}
+                                                {['admin', 'project_manager'].includes(user?.role || '') &&
+                                                    projectFilter !== 'all' &&
+                                                    sortBy === 'order' && (
+                                                        <div className="flex flex-col ml-1 border-l border-gray-200 pl-1 h-full justify-center min-h-[32px]">
+                                                            {reorderingId === task.id ? (
+                                                                <div className="p-1">
+                                                                    <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => handleMoveTask(task, 'up')}
+                                                                        className="p-0.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                                                                        disabled={filteredTasks.indexOf(task) === 0 || reorderingId !== null}
+                                                                    >
+                                                                        <ArrowUp className="w-3 h-3" />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleMoveTask(task, 'down')}
+                                                                        className="p-0.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                                                                        disabled={filteredTasks.indexOf(task) === filteredTasks.length - 1 || reorderingId !== null}
+                                                                    >
+                                                                        <ArrowDown className="w-3 h-3" />
+                                                                    </button>
+                                                                </>
+                                                            )}
+                                                        </div>
+                                                    )}
                                             </div>
                                         </td>
                                     </tr>
@@ -554,11 +637,33 @@ export default function TasksPage() {
                         </table>
                     </div>
 
-                    {/* Footer */}
+                    {/* Footer with Pagination */}
                     <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200">
                         <p className="text-sm text-gray-500">
-                            แสดง {filteredTasks.length} จาก {tasks.length} รายการ
+                            แสดง {paginatedTasks.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} ถึง {Math.min(currentPage * itemsPerPage, filteredTasks.length)} จาก {filteredTasks.length} รายการ
                         </p>
+
+                        {totalPages > 1 && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage(c => Math.max(1, c - 1))}
+                                    disabled={currentPage === 1}
+                                    className="p-1 rounded hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent"
+                                >
+                                    <ChevronLeft className="w-5 h-5 text-gray-600" />
+                                </button>
+                                <span className="text-sm font-medium text-gray-700">
+                                    หน้า {currentPage} / {totalPages}
+                                </span>
+                                <button
+                                    onClick={() => setCurrentPage(c => Math.min(totalPages, c + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="p-1 rounded hover:bg-gray-200 disabled:opacity-30 disabled:hover:bg-transparent"
+                                >
+                                    <ChevronRight className="w-5 h-5 text-gray-600" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

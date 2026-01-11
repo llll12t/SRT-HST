@@ -18,7 +18,8 @@ import {
     X,
     Edit2,
     Trash2,
-    Loader2
+    Loader2,
+    AlertTriangle
 } from 'lucide-react';
 import { Project } from '@/types/construction';
 import { getProjects, createProject, updateProject, deleteProject } from '@/lib/firestore';
@@ -38,7 +39,8 @@ export default function ProjectsPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingProject, setEditingProject] = useState<Project | null>(null);
     const [saving, setSaving] = useState(false);
-    const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+    const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // Used for dropdown menu
+    const [projectToDelete, setProjectToDelete] = useState<Project | null>(null); // Used for delete confirmation modal
 
     // Form state
     const [formData, setFormData] = useState({
@@ -163,14 +165,26 @@ export default function ProjectsPage() {
     };
 
     // Handle delete
-    const handleDelete = async (projectId: string) => {
+    // Handle delete click
+    const handleDeleteClick = (project: Project) => {
+        setProjectToDelete(project);
+        setDeleteConfirm(null);
+    };
+
+    // Confirm delete
+    const confirmDelete = async () => {
+        if (!projectToDelete) return;
+
         try {
-            await deleteProject(projectId);
-            setDeleteConfirm(null);
+            setSaving(true);
+            await deleteProject(projectToDelete.id);
+            setProjectToDelete(null);
             fetchProjects();
         } catch (error) {
             console.error('Error deleting project:', error);
             alert('เกิดข้อผิดพลาดในการลบ');
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -334,7 +348,7 @@ export default function ProjectsPage() {
                                                         แก้ไข
                                                     </button>
                                                     <button
-                                                        onClick={() => handleDelete(project.id)}
+                                                        onClick={() => handleDeleteClick(project)}
                                                         className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
@@ -454,7 +468,7 @@ export default function ProjectsPage() {
                                                                 <Edit2 className="w-4 h-4" />
                                                             </button>
                                                             <button
-                                                                onClick={() => handleDelete(project.id)}
+                                                                onClick={() => handleDeleteClick(project)}
                                                                 className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600 transition-colors"
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
@@ -585,6 +599,42 @@ export default function ProjectsPage() {
                     </div>
                 )
             }
+
+            {/* Delete Confirmation Modal */}
+            {projectToDelete && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl w-full max-w-md p-6">
+                        <div className="flex flex-col items-center text-center">
+                            <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
+                                <AlertTriangle className="w-6 h-6" />
+                            </div>
+                            <h3 className="text-lg font-semibold text-gray-900 mb-2">ยืนยันการลบโครงการ?</h3>
+                            <p className="text-gray-500 text-sm mb-6">
+                                คุณต้องการลบโครงการ <span className="font-medium text-gray-900">"{projectToDelete.name}"</span> ใช่หรือไม่?
+                                <br />
+                                <span className="text-red-600 font-medium mt-1 block">การดำเนินการนี้จะลบงานทั้งหมด (Tasks) ที่เกี่ยวข้องไปด้วย และไม่สามารถกู้คืนได้</span>
+                            </p>
+
+                            <div className="flex items-center gap-3 w-full">
+                                <button
+                                    onClick={() => setProjectToDelete(null)}
+                                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                >
+                                    ยกเลิก
+                                </button>
+                                <button
+                                    onClick={confirmDelete}
+                                    disabled={saving}
+                                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-lg hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    ลบโครงการ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }

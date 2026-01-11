@@ -20,7 +20,9 @@ import {
     ListTodo,
     BarChart3,
     Target,
-    X
+    X,
+    ArrowUp,
+    ArrowDown
 } from 'lucide-react';
 import { Project, Task, Member } from '@/types/construction';
 import { getProject, updateProject, getTasks, createTask, updateTask, deleteTask, updateTaskProgress, getMembers } from '@/lib/firestore';
@@ -48,7 +50,6 @@ export default function ProjectDetailPage() {
         category: '',
         name: '',
         description: '',
-        weight: 1, // Default to 1 for equal weighting if not used
         cost: 0,
         quantity: '',
         planStartDate: '',
@@ -71,6 +72,7 @@ export default function ProjectDetailPage() {
         reason: ''
     });
     const [savingProgress, setSavingProgress] = useState(false);
+    const [reorderingId, setReorderingId] = useState<string | null>(null);
 
     // Fetch data
     useEffect(() => {
@@ -103,12 +105,12 @@ export default function ProjectDetailPage() {
         completedTasks: tasks.filter(t => t.status === 'completed').length,
         inProgressTasks: tasks.filter(t => t.status === 'in-progress').length,
         notStartedTasks: tasks.filter(t => t.status === 'not-started').length,
-        totalWeight: tasks.reduce((sum, t) => sum + (Number(t.weight) || 0), 0),
-        weightedProgress: tasks.reduce((sum, t) => sum + ((Number(t.weight) || 0) * (Number(t.progress) || 0) / 100), 0)
+        totalDuration: tasks.reduce((sum, t) => sum + (Number(t.planDuration) || 0), 0),
+        weightedProgress: tasks.reduce((sum, t) => sum + ((Number(t.planDuration) || 0) * (Number(t.progress) || 0) / 100), 0)
     };
 
-    const calculatedProgress = stats.totalWeight > 0
-        ? (stats.weightedProgress / stats.totalWeight) * 100
+    const calculatedProgress = stats.totalDuration > 0
+        ? (stats.weightedProgress / stats.totalDuration) * 100
         : 0;
 
     // Open task modal
@@ -118,7 +120,6 @@ export default function ProjectDetailPage() {
             category: '',
             name: '',
             description: '',
-            weight: 1,
             cost: 0,
             quantity: '',
             planStartDate: project?.startDate || '',
@@ -138,7 +139,6 @@ export default function ProjectDetailPage() {
             category: task.category,
             name: task.name,
             description: task.description || '',
-            weight: task.weight || 1,
             cost: task.cost || 0,
             quantity: task.quantity || '',
             planStartDate: task.planStartDate,
@@ -167,7 +167,6 @@ export default function ProjectDetailPage() {
                     category: taskForm.category,
                     name: taskForm.name,
                     description: taskForm.description,
-                    weight: taskForm.weight,
                     cost: taskForm.cost,
                     quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
@@ -180,12 +179,14 @@ export default function ProjectDetailPage() {
                     status
                 });
             } else {
+                // Determine new order: max order in this project + 1
+                const maxOrder = tasks.reduce((max, t) => Math.max(max, t.order || 0), 0);
+
                 await createTask({
                     projectId,
                     category: taskForm.category,
                     name: taskForm.name,
                     description: taskForm.description,
-                    weight: taskForm.weight,
                     cost: taskForm.cost,
                     quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
@@ -196,7 +197,7 @@ export default function ProjectDetailPage() {
                     actualStartDate: taskForm.actualStartDate || undefined,
                     actualEndDate: taskForm.actualEndDate || undefined,
                     status,
-                    order: tasks.length + 1
+                    order: maxOrder + 1
                 });
             }
 
@@ -219,6 +220,31 @@ export default function ProjectDetailPage() {
             fetchData();
         } catch (error) {
             console.error('Error deleting task:', error);
+        }
+    };
+
+    const handleMoveTask = async (task: Task, direction: 'up' | 'down', categoryTasks: Task[]) => {
+        const currentIndex = categoryTasks.findIndex(t => t.id === task.id);
+        if (currentIndex === -1) return;
+
+        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+        if (targetIndex < 0 || targetIndex >= categoryTasks.length) return;
+
+        const targetTask = categoryTasks[targetIndex];
+
+        setReorderingId(task.id);
+        try {
+            const taskOrder = task.order || 0;
+            const targetOrder = targetTask.order || 0;
+
+            await updateTask(task.id, { order: targetOrder });
+            await updateTask(targetTask.id, { order: taskOrder });
+            await fetchData();
+        } catch (error) {
+            console.error('Reorder failed', error);
+            alert('จัดลำดับไม่สำเร็จ');
+        } finally {
+            setReorderingId(null);
         }
     };
 
@@ -526,21 +552,49 @@ export default function ProjectDetailPage() {
                                                 </button>
                                             )}
 
-                                            {/* Edit/Delete */}
+                                            {/* Edit/Delete/Reorder */}
                                             {['admin', 'project_manager'].includes(user?.role || '') && (
                                                 <>
-                                                    <button
-                                                        onClick={() => openEditTaskModal(task)}
-                                                        className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"
-                                                    >
-                                                        <Edit2 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeleteTask(task.id)}
-                                                        className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => openEditTaskModal(task)}
+                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteTask(task.id)}
+                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Reorder Buttons */}
+                                                    <div className="flex flex-col ml-1 border-l border-gray-200 pl-1 h-full justify-center min-h-[32px]">
+                                                        {reorderingId === task.id ? (
+                                                            <div className="p-1">
+                                                                <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />
+                                                            </div>
+                                                        ) : (
+                                                            <>
+                                                                <button
+                                                                    onClick={() => handleMoveTask(task, 'up', categoryTasks)}
+                                                                    className="p-0.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                                                                    disabled={categoryTasks.indexOf(task) === 0 || reorderingId !== null}
+                                                                >
+                                                                    <ArrowUp className="w-3 h-3" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => handleMoveTask(task, 'down', categoryTasks)}
+                                                                    className="p-0.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                                                                    disabled={categoryTasks.indexOf(task) === categoryTasks.length - 1 || reorderingId !== null}
+                                                                >
+                                                                    <ArrowDown className="w-3 h-3" />
+                                                                </button>
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </>
                                             )}
                                         </div>

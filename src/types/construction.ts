@@ -20,7 +20,7 @@ export interface Task {
     name: string;
     description?: string;
     responsible?: string;
-    weight: number; // % of work (น้ำหนักงาน)
+    // weight removed
     cost?: number; // Cost in Baht
     quantity?: string; // Q'ty with unit (e.g. "20 m.")
     planStartDate: string;
