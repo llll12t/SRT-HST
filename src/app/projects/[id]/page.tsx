@@ -462,32 +462,41 @@ export default function ProjectDetailPage() {
                                 {categoryTasks.map((task) => (
                                     <div
                                         key={task.id}
-                                        className="px-5 py-4 hover:bg-gray-50 transition-colors flex items-center gap-4"
+                                        className="grid grid-cols-12 gap-4 px-5 py-4 hover:bg-gray-50 transition-colors items-center"
                                     >
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <p className="text-sm font-medium text-gray-900 truncate">{task.name}</p>
-                                                <span className={`badge ${getStatusConfig(task.status).class}`}>
+                                        {/* Col 1: Title & Meta */}
+                                        <div className="col-span-5 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <p className="text-sm font-medium text-gray-900 truncate" title={task.name}>{task.name}</p>
+                                                <span className={`badge ${getStatusConfig(task.status).class} shrink-0`}>
                                                     {getStatusConfig(task.status).label}
                                                 </span>
                                             </div>
-                                            <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                                                {task.cost ? <span>Cost: {task.cost.toLocaleString()}</span> : null}
+                                            <div className="flex items-center gap-3 text-xs text-gray-500">
+                                                {task.cost ? <span>{task.cost.toLocaleString()} ฿</span> : null}
                                                 {task.quantity ? <span>Qty: {task.quantity}</span> : null}
-                                                <div className="flex flex-col gap-0.5">
-                                                    <span>แผน: {new Date(task.planStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {new Date(task.planEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
-                                                    {task.actualStartDate && (
-                                                        <span className="text-green-600 font-medium">
-                                                            จริง: {new Date(task.actualStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {task.actualEndDate ? new Date(task.actualEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '...'}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                {task.responsible && <span>ผู้รับผิดชอบ: {task.responsible}</span>}
+                                                {task.responsible && <span className="truncate max-w-[150px]" title={task.responsible}>ดูแลโดย: {task.responsible}</span>}
                                             </div>
                                         </div>
 
-                                        {/* Progress */}
-                                        <div className="w-32">
+                                        {/* Col 2: Dates */}
+                                        <div className="col-span-3 text-xs">
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex items-center gap-2 text-gray-500">
+                                                    <span className="w-8 shrink-0">แผน:</span>
+                                                    <span>{new Date(task.planStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {new Date(task.planEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                                </div>
+                                                {task.actualStartDate && (
+                                                    <div className="flex items-center gap-2 text-green-600 font-medium">
+                                                        <span className="w-8 shrink-0">จริง:</span>
+                                                        <span>{new Date(task.actualStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {task.actualEndDate ? new Date(task.actualEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '...'}</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Col 3: Progress */}
+                                        <div className="col-span-2">
                                             <div className="flex items-center justify-between text-xs mb-1">
                                                 <span className="text-gray-500">Progress</span>
                                                 <span className={`font-medium ${task.progress === 100 ? 'text-green-600' : 'text-gray-700'
@@ -505,24 +514,19 @@ export default function ProjectDetailPage() {
                                             </div>
                                         </div>
 
-                                        {/* Quick Progress Buttons */}
-                                        <div className="flex items-center gap-1">
-                                            {['admin', 'project_manager', 'engineer'].includes(user?.role || '') && [0, 25, 50, 75, 100].map((val) => (
+                                        {/* Col 4: Actions */}
+                                        <div className="col-span-2 flex items-center justify-end gap-2">
+                                            {/* Update Button */}
+                                            {['admin', 'project_manager', 'engineer'].includes(user?.role || '') && (
                                                 <button
-                                                    key={val}
-                                                    onClick={() => openProgressModal(task, val)}
-                                                    className={`px-2 py-1 text-xs rounded ${task.progress === val
-                                                        ? 'bg-blue-100 text-blue-700'
-                                                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                                                        }`}
+                                                    onClick={() => openProgressModal(task, task.progress)}
+                                                    className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors border border-blue-200 whitespace-nowrap"
                                                 >
-                                                    {val}%
+                                                    อัปเดท
                                                 </button>
-                                            ))}
-                                        </div>
+                                            )}
 
-                                        {/* Actions */}
-                                        <div className="flex items-center gap-1">
+                                            {/* Edit/Delete */}
                                             {['admin', 'project_manager'].includes(user?.role || '') && (
                                                 <>
                                                     <button

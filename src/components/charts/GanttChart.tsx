@@ -87,7 +87,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
     };
 
     const handleExport = () => {
-        const headers = ['Category', 'Task Name', 'Start Date', 'End Date', 'Duration (Days)', 'Weight (%)', 'Progress (%)'];
+        const headers = ['Category', 'Task Name', 'Start Date', 'End Date', 'Duration (Days)', 'Progress (%)'];
         const rows = tasks.map(task => {
             const duration = differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1;
             return [
@@ -96,7 +96,6 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                 task.planStartDate,
                 task.planEndDate,
                 duration,
-                task.weight || 0,
                 task.progress || 0
             ].join(',');
         });
@@ -206,7 +205,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
         }
     };
 
-    const stickyWidth = showDates ? 480 : 360;
+    const stickyWidth = showDates ? 480 : 250;
 
     return (
         <div className="flex flex-col h-[700px] bg-white rounded-xl border border-gray-200 shadow-sm w-full max-w-full overflow-hidden">
@@ -263,9 +262,13 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                             <div className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200 flex items-end pb-2 px-4 shadow-[4px_0_10px_rgba(0,0,0,0.03)] h-16"
                                 style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
                                 <div className="flex-1 text-xs font-semibold text-gray-500 uppercase">Task Name</div>
-                                <div className="w-16 text-right text-xs font-semibold text-gray-500 uppercase">Cost</div>
-                                <div className="w-16 text-right text-xs font-semibold text-gray-500 uppercase">Q'ty</div>
-                                {showDates && <div className="w-24 text-right text-xs font-semibold text-gray-500 uppercase">Period</div>}
+                                {showDates && (
+                                    <>
+                                        <div className="w-16 text-right text-xs font-semibold text-gray-500 uppercase">Cost</div>
+                                        <div className="w-16 text-right text-xs font-semibold text-gray-500 uppercase">Q'ty</div>
+                                        <div className="w-24 text-right text-xs font-semibold text-gray-500 uppercase">Period</div>
+                                    </>
+                                )}
                                 <div className="w-10 text-right text-xs font-semibold text-gray-500 uppercase">%</div>
                             </div>
 
@@ -335,17 +338,18 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                                                     {task.name}
                                                 </div>
 
-                                                <div className="w-16 text-right text-[10px] text-gray-500 font-medium">
-                                                    {task.cost ? task.cost.toLocaleString() : '-'}
-                                                </div>
-                                                <div className="w-16 text-right text-[10px] text-gray-500 font-medium">
-                                                    {task.quantity || '-'}
-                                                </div>
-
                                                 {showDates && (
-                                                    <div className="w-24 text-right text-[9px] text-gray-400">
-                                                        {format(parseISO(task.planStartDate), 'd/MM')} - {format(parseISO(task.planEndDate), 'd/MM')}
-                                                    </div>
+                                                    <>
+                                                        <div className="w-16 text-right text-[10px] text-gray-500 font-medium">
+                                                            {task.cost ? task.cost.toLocaleString() : '-'}
+                                                        </div>
+                                                        <div className="w-16 text-right text-[10px] text-gray-500 font-medium">
+                                                            {task.quantity || '-'}
+                                                        </div>
+                                                        <div className="w-24 text-right text-[9px] text-gray-400">
+                                                            {format(parseISO(task.planStartDate), 'd/MM')} - {format(parseISO(task.planEndDate), 'd/MM')}
+                                                        </div>
+                                                    </>
                                                 )}
                                                 <div className={`w-10 text-right text-[10px] font-bold ${Number(task.progress) === 100 ? 'text-green-600' : Number(task.progress) > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
                                                     {Number(task.progress)}%

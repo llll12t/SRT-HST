@@ -64,7 +64,21 @@ export default function GanttPage() {
     const handleExport = () => {
         if (tasks.length === 0) return;
 
-        const headers = ['Category', 'Task Name', 'Start Date', 'End Date', 'Duration (Days)', 'Weight (%)', 'Progress (%)'];
+        const headers = [
+            'Category',
+            'Task Name',
+            'Cost',
+            'Quantity',
+            'Responsible',
+            'Plan Start',
+            'Plan End',
+            'Actual Start',
+            'Actual End',
+            'Duration (Days)',
+            'Progress (%)',
+            'Status'
+        ];
+
         const rows = tasks.map(task => {
             let duration = 0;
             try {
@@ -75,11 +89,16 @@ export default function GanttPage() {
             return [
                 `"${task.category}"`,
                 `"${task.name}"`,
+                task.cost || 0,
+                `"${task.quantity || ''}"`,
+                `"${task.responsible || ''}"`,
                 task.planStartDate,
                 task.planEndDate,
+                task.actualStartDate || '-',
+                task.actualEndDate || '-',
                 duration,
-                task.weight || 0,
-                task.progress || 0
+                task.progress || 0,
+                `"${task.status}"`
             ].join(',');
         });
 
@@ -103,11 +122,18 @@ export default function GanttPage() {
     };
 
     // Calculate overall progress
-    const totalWeight = tasks.reduce((sum, t) => sum + (Number(t.weight) || 0), 0);
-    const weightedProgress = tasks.reduce((sum, t) =>
-        sum + ((Number(t.weight) || 0) * (Number(t.progress) || 0) / 100), 0
-    );
-    const overallProgress = totalWeight > 0 ? (weightedProgress / totalWeight) * 100 : 0;
+    // Calculate overall progress based on Duration
+    const totalDuration = tasks.reduce((sum, t) => {
+        const d = differenceInDays(parseISO(t.planEndDate), parseISO(t.planStartDate)) + 1;
+        return sum + Math.max(0, d);
+    }, 0);
+
+    const weightedProgress = tasks.reduce((sum, t) => {
+        const d = differenceInDays(parseISO(t.planEndDate), parseISO(t.planStartDate)) + 1;
+        const duration = Math.max(0, d);
+        return sum + (duration * (Number(t.progress) || 0) / 100);
+    }, 0);
+    const overallProgress = totalDuration > 0 ? (weightedProgress / totalDuration) * 100 : 0;
 
     if (loading) {
         return (
@@ -170,8 +196,8 @@ export default function GanttPage() {
                         onClick={handleExport}
                         disabled={tasks.length === 0}
                         className={`px-4 py-2 text-sm font-medium border rounded-lg flex items-center gap-2 transition-colors ${tasks.length === 0
-                                ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
-                                : 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50'
+                            ? 'bg-gray-50 text-gray-400 border-gray-200 cursor-not-allowed'
+                            : 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50'
                             }`}
                     >
                         <Download className="w-4 h-4" />
