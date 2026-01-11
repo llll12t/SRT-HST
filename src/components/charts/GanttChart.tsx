@@ -16,7 +16,7 @@ interface GanttChartProps {
 type ViewMode = 'day' | 'week' | 'month';
 
 export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = '2025-04-30', title }: GanttChartProps) {
-    const [viewMode, setViewMode] = useState<ViewMode>('day');
+    const [viewMode, setViewMode] = useState<ViewMode>('week');
     const [showDates, setShowDates] = useState(true);
     const [currentDate, setCurrentDate] = useState(new Date());
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -124,42 +124,89 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
         const chartStart = timeRange.start;
         const totalDays = differenceInDays(timeRange.end, chartStart);
 
-        const taskStart = parseISO(task.planStartDate);
-        const taskEnd = parseISO(task.planEndDate);
+        if (type === 'plan') {
+            // Plan bar uses plan dates
+            const taskStart = parseISO(task.planStartDate);
+            const taskEnd = parseISO(task.planEndDate);
+            const startOffsetDays = differenceInDays(taskStart, chartStart);
+            const durationDays = differenceInDays(taskEnd, taskStart) + 1;
 
-        const startOffsetDays = differenceInDays(taskStart, chartStart);
-        const durationDays = differenceInDays(taskEnd, taskStart) + 1;
+            let leftPx = 0;
+            let widthPx = 0;
 
-        let widthDays = durationDays;
-        if (type === 'actual') {
-            widthDays = durationDays * ((Number(task.progress) || 0) / 100);
+            if (viewMode === 'day') {
+                leftPx = startOffsetDays * config.cellWidth;
+                widthPx = durationDays * config.cellWidth;
+            } else if (viewMode === 'week') {
+                leftPx = (startOffsetDays / 7) * config.cellWidth;
+                widthPx = (durationDays / 7) * config.cellWidth;
+            } else if (viewMode === 'month') {
+                leftPx = (startOffsetDays / 30.44) * config.cellWidth;
+                widthPx = (durationDays / 30.44) * config.cellWidth;
+            }
+
+            if ((leftPx < 0 && leftPx + widthPx < 0) || (leftPx > totalDays * config.cellWidth)) {
+                return { display: 'none' as const };
+            }
+
+            return {
+                left: `${leftPx}px`,
+                width: `${Math.max(4, widthPx)}px`
+            };
+        } else {
+            // Actual bar uses actual dates if available, otherwise progress on plan dates
+            const hasActualStart = task.actualStartDate && task.actualStartDate.length > 0;
+            const hasActualEnd = task.actualEndDate && task.actualEndDate.length > 0;
+
+            let actualStart, actualEnd;
+
+            if (hasActualStart) {
+                actualStart = parseISO(task.actualStartDate!);
+            } else {
+                actualStart = parseISO(task.planStartDate);
+            }
+
+            if (hasActualEnd) {
+                actualEnd = parseISO(task.actualEndDate!);
+            } else if (Number(task.progress) > 0) {
+                // If in progress but no end date, show bar up to today or based on progress
+                const plannedDuration = differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1;
+                const progressDays = Math.round(plannedDuration * (Number(task.progress) / 100));
+                actualEnd = new Date(actualStart);
+                actualEnd.setDate(actualEnd.getDate() + Math.max(0, progressDays - 1));
+            } else {
+                return { display: 'none' as const };
+            }
+
+            const startOffsetDays = differenceInDays(actualStart, chartStart);
+            const durationDays = differenceInDays(actualEnd, actualStart) + 1;
+
+            let leftPx = 0;
+            let widthPx = 0;
+
+            if (viewMode === 'day') {
+                leftPx = startOffsetDays * config.cellWidth;
+                widthPx = durationDays * config.cellWidth;
+            } else if (viewMode === 'week') {
+                leftPx = (startOffsetDays / 7) * config.cellWidth;
+                widthPx = (durationDays / 7) * config.cellWidth;
+            } else if (viewMode === 'month') {
+                leftPx = (startOffsetDays / 30.44) * config.cellWidth;
+                widthPx = (durationDays / 30.44) * config.cellWidth;
+            }
+
+            if ((leftPx < 0 && leftPx + widthPx < 0) || (leftPx > totalDays * config.cellWidth)) {
+                return { display: 'none' as const };
+            }
+
+            return {
+                left: `${leftPx}px`,
+                width: `${Math.max(4, widthPx)}px`
+            };
         }
-
-        let leftPx = 0;
-        let widthPx = 0;
-
-        if (viewMode === 'day') {
-            leftPx = startOffsetDays * config.cellWidth;
-            widthPx = widthDays * config.cellWidth;
-        } else if (viewMode === 'week') {
-            leftPx = (startOffsetDays / 7) * config.cellWidth;
-            widthPx = (widthDays / 7) * config.cellWidth;
-        } else if (viewMode === 'month') {
-            leftPx = (startOffsetDays / 30.44) * config.cellWidth;
-            widthPx = (widthDays / 30.44) * config.cellWidth;
-        }
-
-        if ((leftPx < 0 && leftPx + widthPx < 0) || (leftPx > totalDays * config.cellWidth)) {
-            return { display: 'none' as const };
-        }
-
-        return {
-            left: `${leftPx}px`,
-            width: `${Math.max(4, widthPx)}px`
-        };
     };
 
-    const stickyWidth = showDates ? 370 : 250;
+    const stickyWidth = showDates ? 480 : 360;
 
     return (
         <div className="flex flex-col h-[700px] bg-white rounded-xl border border-gray-200 shadow-sm w-full max-w-full overflow-hidden">
@@ -216,7 +263,8 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                             <div className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200 flex items-end pb-2 px-4 shadow-[4px_0_10px_rgba(0,0,0,0.03)] h-16"
                                 style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
                                 <div className="flex-1 text-xs font-semibold text-gray-500 uppercase">Task Name</div>
-                                <div className="w-12 text-right text-xs font-semibold text-gray-500 uppercase" title="Weight (% Work)">Wt.</div>
+                                <div className="w-16 text-right text-xs font-semibold text-gray-500 uppercase">Cost</div>
+                                <div className="w-16 text-right text-xs font-semibold text-gray-500 uppercase">Q'ty</div>
                                 {showDates && <div className="w-24 text-right text-xs font-semibold text-gray-500 uppercase">Period</div>}
                                 <div className="w-10 text-right text-xs font-semibold text-gray-500 uppercase">%</div>
                             </div>
@@ -283,12 +331,15 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                                         <div key={task.id} className="flex h-9 border-b border-gray-50 hover:bg-gray-50 transition-colors group">
                                             <div className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-200 flex items-center px-4 shadow-[4px_0_10px_rgba(0,0,0,0.02)]"
                                                 style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
-                                                <div className="flex-1 truncate text-xs text-gray-700 font-medium" title={task.name}>
+                                                <div className="flex-1 truncate text-xs text-gray-700 font-medium pl-2" title={task.name}>
                                                     {task.name}
                                                 </div>
 
-                                                <div className="w-12 text-right text-[10px] text-gray-500 font-medium mr-2">
-                                                    {Number(task.weight) > 0 ? `${Number(task.weight)}%` : '-'}
+                                                <div className="w-16 text-right text-[10px] text-gray-500 font-medium">
+                                                    {task.cost ? task.cost.toLocaleString() : '-'}
+                                                </div>
+                                                <div className="w-16 text-right text-[10px] text-gray-500 font-medium">
+                                                    {task.quantity || '-'}
                                                 </div>
 
                                                 {showDates && (

@@ -21,6 +21,8 @@ export interface Task {
     description?: string;
     responsible?: string;
     weight: number; // % of work (น้ำหนักงาน)
+    cost?: number; // Cost in Baht
+    quantity?: string; // Q'ty with unit (e.g. "20 m.")
     planStartDate: string;
     planEndDate: string;
     planDuration: number;
@@ -93,6 +95,23 @@ export interface GanttTask {
     actualEnd?: Date;
     progress: number;
     weight: number;
+    cost?: number;
+    quantity?: string;
     isCategory?: boolean;
     children?: GanttTask[];
+}
+
+// Team member
+export interface Member {
+    id: string;
+    name: string;
+    email: string;
+    phone?: string;
+    role: 'admin' | 'project_manager' | 'engineer' | 'viewer';
+    position?: string;
+    department?: string;
+    username?: string;
+    avatar?: string;
+    createdAt?: string;
+    updatedAt?: string;
 }

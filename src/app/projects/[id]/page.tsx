@@ -22,16 +22,22 @@ import {
     Target,
     X
 } from 'lucide-react';
-import { Project, Task } from '@/types/construction';
-import { getProject, updateProject, getTasks, createTask, updateTask, deleteTask, updateTaskProgress } from '@/lib/firestore';
+import { Project, Task, Member } from '@/types/construction';
+import { getProject, updateProject, getTasks, createTask, updateTask, deleteTask, updateTaskProgress, getMembers } from '@/lib/firestore';
+import { useAuth } from '@/contexts/AuthContext';
+
+
+
 
 export default function ProjectDetailPage() {
+    const { user } = useAuth();
     const params = useParams();
     const router = useRouter();
     const projectId = params.id as string;
 
     const [project, setProject] = useState<Project | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [members, setMembers] = useState<Member[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Task modal
@@ -42,13 +48,29 @@ export default function ProjectDetailPage() {
         category: '',
         name: '',
         description: '',
-        weight: 0,
+        weight: 1, // Default to 1 for equal weighting if not used
+        cost: 0,
+        quantity: '',
         planStartDate: '',
         planEndDate: '',
         planDuration: 0,
         progress: 0,
-        responsible: ''
+        responsible: '',
+        actualStartDate: '',
+        actualEndDate: ''
     });
+
+    // Progress update modal
+    const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
+    const [progressUpdate, setProgressUpdate] = useState({
+        taskId: '',
+        taskName: '',
+        currentProgress: 0,
+        newProgress: 0,
+        updateDate: new Date().toISOString().split('T')[0],
+        reason: ''
+    });
+    const [savingProgress, setSavingProgress] = useState(false);
 
     // Fetch data
     useEffect(() => {
@@ -60,12 +82,14 @@ export default function ProjectDetailPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [projectData, tasksData] = await Promise.all([
+            const [projectData, tasksData, membersData] = await Promise.all([
                 getProject(projectId),
-                getTasks(projectId)
+                getTasks(projectId),
+                getMembers()
             ]);
             setProject(projectData);
             setTasks(tasksData);
+            setMembers(membersData);
         } catch (error) {
             console.error('Error fetching data:', error);
         } finally {
@@ -94,12 +118,16 @@ export default function ProjectDetailPage() {
             category: '',
             name: '',
             description: '',
-            weight: 0,
+            weight: 1,
+            cost: 0,
+            quantity: '',
             planStartDate: project?.startDate || '',
             planEndDate: project?.endDate || '',
             planDuration: 30,
             progress: 0,
-            responsible: ''
+            responsible: '',
+            actualStartDate: '',
+            actualEndDate: ''
         });
         setIsTaskModalOpen(true);
     };
@@ -110,12 +138,16 @@ export default function ProjectDetailPage() {
             category: task.category,
             name: task.name,
             description: task.description || '',
-            weight: task.weight,
+            weight: task.weight || 1,
+            cost: task.cost || 0,
+            quantity: task.quantity || '',
             planStartDate: task.planStartDate,
             planEndDate: task.planEndDate,
             planDuration: task.planDuration,
             progress: task.progress,
-            responsible: task.responsible || ''
+            responsible: task.responsible || '',
+            actualStartDate: task.actualStartDate || '',
+            actualEndDate: task.actualEndDate || ''
         });
         setIsTaskModalOpen(true);
     };
@@ -136,11 +168,15 @@ export default function ProjectDetailPage() {
                     name: taskForm.name,
                     description: taskForm.description,
                     weight: taskForm.weight,
+                    cost: taskForm.cost,
+                    quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
                     planEndDate: taskForm.planEndDate,
                     planDuration: taskForm.planDuration,
                     progress: taskForm.progress,
                     responsible: taskForm.responsible,
+                    actualStartDate: taskForm.actualStartDate || undefined,
+                    actualEndDate: taskForm.actualEndDate || undefined,
                     status
                 });
             } else {
@@ -150,11 +186,15 @@ export default function ProjectDetailPage() {
                     name: taskForm.name,
                     description: taskForm.description,
                     weight: taskForm.weight,
+                    cost: taskForm.cost,
+                    quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
                     planEndDate: taskForm.planEndDate,
                     planDuration: taskForm.planDuration,
                     progress: taskForm.progress,
                     responsible: taskForm.responsible,
+                    actualStartDate: taskForm.actualStartDate || undefined,
+                    actualEndDate: taskForm.actualEndDate || undefined,
                     status,
                     order: tasks.length + 1
                 });
@@ -182,13 +222,63 @@ export default function ProjectDetailPage() {
         }
     };
 
-    // Handle quick progress update
-    const handleProgressUpdate = async (taskId: string, progress: number) => {
+    // Handle quick progress update - open modal
+    const openProgressModal = (task: Task, progress: number) => {
+        setProgressUpdate({
+            taskId: task.id,
+            taskName: task.name,
+            currentProgress: task.progress,
+            newProgress: progress,
+            updateDate: new Date().toISOString().split('T')[0],
+            reason: ''
+        });
+        setIsProgressModalOpen(true);
+    };
+
+    // Handle progress submit with date and reason
+    const handleProgressSubmit = async () => {
+        if (!progressUpdate.taskId) return;
+
+        setSavingProgress(true);
         try {
-            await updateTaskProgress(taskId, progress);
+            // Get the task to update actual dates
+            const task = tasks.find(t => t.id === progressUpdate.taskId);
+            if (!task) return;
+
+            // Prepare update data
+            const updateData: Partial<Task> = {
+                progress: progressUpdate.newProgress,
+                status: progressUpdate.newProgress === 100 ? 'completed' : progressUpdate.newProgress > 0 ? 'in-progress' : 'not-started'
+            };
+
+            // Only set remarks if there's a value
+            if (progressUpdate.reason) {
+                updateData.remarks = progressUpdate.reason;
+            }
+
+            // Set actualStartDate if starting work
+            if (!task.actualStartDate && progressUpdate.newProgress > 0) {
+                updateData.actualStartDate = progressUpdate.updateDate;
+            }
+
+            // Set actualEndDate if completing work
+            if (progressUpdate.newProgress === 100) {
+                updateData.actualEndDate = progressUpdate.updateDate;
+            }
+
+            // Clear actualEndDate if reopening task - use empty string instead of undefined
+            if (progressUpdate.newProgress < 100 && task.actualEndDate) {
+                updateData.actualEndDate = '';
+            }
+
+            await updateTask(progressUpdate.taskId, updateData);
+            setIsProgressModalOpen(false);
             fetchData();
         } catch (error) {
             console.error('Error updating progress:', error);
+            alert('เกิดข้อผิดพลาดในการอัปเดท');
+        } finally {
+            setSavingProgress(false);
         }
     };
 
@@ -267,13 +357,15 @@ export default function ProjectDetailPage() {
                         <BarChart3 className="w-4 h-4" />
                         Gantt Chart
                     </Link>
-                    <button
-                        onClick={openCreateTaskModal}
-                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                    >
-                        <Plus className="w-4 h-4" />
-                        เพิ่มงาน
-                    </button>
+                    {['admin', 'project_manager'].includes(user?.role || '') && (
+                        <button
+                            onClick={openCreateTaskModal}
+                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                        >
+                            <Plus className="w-4 h-4" />
+                            เพิ่มงาน
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -339,7 +431,7 @@ export default function ProjectDetailPage() {
                 <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
                     <div>
                         <h2 className="font-semibold text-gray-900">รายการงาน</h2>
-                        <p className="text-gray-500 text-sm mt-0.5">น้ำหนักรวม: {stats.totalWeight.toFixed(2)}%</p>
+                        <p className="text-gray-500 text-sm mt-0.5">จำนวน: {tasks.length} งาน</p>
                     </div>
                 </div>
 
@@ -347,12 +439,14 @@ export default function ProjectDetailPage() {
                     <div className="p-12 text-center">
                         <ListTodo className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                         <p className="text-gray-500 mb-4">ยังไม่มีรายการงาน</p>
-                        <button
-                            onClick={openCreateTaskModal}
-                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
-                        >
-                            เพิ่มงานแรก
-                        </button>
+                        {['admin', 'project_manager'].includes(user?.role || '') && (
+                            <button
+                                onClick={openCreateTaskModal}
+                                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+                            >
+                                เพิ่มงานแรก
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="divide-y divide-gray-100">
@@ -378,8 +472,16 @@ export default function ProjectDetailPage() {
                                                 </span>
                                             </div>
                                             <div className="flex items-center gap-3 mt-1 text-xs text-gray-500">
-                                                <span>น้ำหนัก: {task.weight}%</span>
-                                                <span>{task.planStartDate} → {task.planEndDate}</span>
+                                                {task.cost ? <span>Cost: {task.cost.toLocaleString()}</span> : null}
+                                                {task.quantity ? <span>Qty: {task.quantity}</span> : null}
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span>แผน: {new Date(task.planStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {new Date(task.planEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
+                                                    {task.actualStartDate && (
+                                                        <span className="text-green-600 font-medium">
+                                                            จริง: {new Date(task.actualStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {task.actualEndDate ? new Date(task.actualEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '...'}
+                                                        </span>
+                                                    )}
+                                                </div>
                                                 {task.responsible && <span>ผู้รับผิดชอบ: {task.responsible}</span>}
                                             </div>
                                         </div>
@@ -405,10 +507,10 @@ export default function ProjectDetailPage() {
 
                                         {/* Quick Progress Buttons */}
                                         <div className="flex items-center gap-1">
-                                            {[0, 25, 50, 75, 100].map((val) => (
+                                            {['admin', 'project_manager', 'engineer'].includes(user?.role || '') && [0, 25, 50, 75, 100].map((val) => (
                                                 <button
                                                     key={val}
-                                                    onClick={() => handleProgressUpdate(task.id, val)}
+                                                    onClick={() => openProgressModal(task, val)}
                                                     className={`px-2 py-1 text-xs rounded ${task.progress === val
                                                         ? 'bg-blue-100 text-blue-700'
                                                         : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -421,18 +523,22 @@ export default function ProjectDetailPage() {
 
                                         {/* Actions */}
                                         <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => openEditTaskModal(task)}
-                                                className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"
-                                            >
-                                                <Edit2 className="w-4 h-4" />
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteTask(task.id)}
-                                                className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            {['admin', 'project_manager'].includes(user?.role || '') && (
+                                                <>
+                                                    <button
+                                                        onClick={() => openEditTaskModal(task)}
+                                                        className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"
+                                                    >
+                                                        <Edit2 className="w-4 h-4" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleDeleteTask(task.id)}
+                                                        className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -459,16 +565,24 @@ export default function ProjectDetailPage() {
                         </div>
 
                         <form onSubmit={handleTaskSubmit} className="p-6 space-y-4">
+
+
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1.5">หมวดหมู่ *</label>
                                 <input
                                     type="text"
+                                    list="category-list"
                                     required
                                     value={taskForm.category}
                                     onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}
-                                    placeholder="เช่น งานเตรียมการ, งานรั้ว Area 1"
+                                    placeholder="เลือกหรือพิมพ์หมวดหมู่ใหม่..."
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
                                 />
+                                <datalist id="category-list">
+                                    {[...new Set(tasks.map(t => t.category))].map((c, i) => (
+                                        <option key={i} value={c} />
+                                    ))}
+                                </datalist>
                             </div>
 
                             <div>
@@ -478,22 +592,30 @@ export default function ProjectDetailPage() {
                                     required
                                     value={taskForm.name}
                                     onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
-                                    placeholder="เช่น งานเขียนแบบและตรวจสร้าง"
+                                    placeholder="ชื่องาน"
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
                                 />
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">น้ำหนักงาน (%) *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Cost (Baht)</label>
                                     <input
                                         type="number"
-                                        required
                                         min="0"
-                                        max="100"
                                         step="0.01"
-                                        value={taskForm.weight}
-                                        onChange={(e) => setTaskForm({ ...taskForm, weight: parseFloat(e.target.value) || 0 })}
+                                        value={taskForm.cost}
+                                        onChange={(e) => setTaskForm({ ...taskForm, cost: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity (Q'ty)</label>
+                                    <input
+                                        type="text"
+                                        value={taskForm.quantity}
+                                        onChange={(e) => setTaskForm({ ...taskForm, quantity: e.target.value })}
+                                        placeholder="e.g. 50 m2"
                                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
                                     />
                                 </div>
@@ -537,11 +659,43 @@ export default function ProjectDetailPage() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1.5">ผู้รับผิดชอบ</label>
                                 <input
                                     type="text"
+                                    list="member-list"
                                     value={taskForm.responsible}
                                     onChange={(e) => setTaskForm({ ...taskForm, responsible: e.target.value })}
-                                    placeholder="ชื่อผู้รับผิดชอบ"
+                                    placeholder="เลือกหรือพิมพ์ชื่อผู้รับผิดชอบ..."
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
                                 />
+                                <datalist id="member-list">
+                                    {members.map((member) => (
+                                        <option key={member.id} value={member.name}>{member.name} ({member.role})</option>
+                                    ))}
+                                </datalist>
+                            </div>
+
+                            {/* Actual Dates Section */}
+                            <div className="pt-4 border-t border-gray-200">
+                                <p className="text-sm font-medium text-gray-900 mb-3">วันที่ดำเนินการจริง</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">เริ่มงานจริง</label>
+                                        <input
+                                            type="date"
+                                            value={taskForm.actualStartDate}
+                                            onChange={(e) => setTaskForm({ ...taskForm, actualStartDate: e.target.value })}
+                                            className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm focus:bg-white focus:border-green-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">เสร็จงานจริง</label>
+                                        <input
+                                            type="date"
+                                            value={taskForm.actualEndDate}
+                                            onChange={(e) => setTaskForm({ ...taskForm, actualEndDate: e.target.value })}
+                                            className="w-full px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-sm focus:bg-white focus:border-green-500"
+                                        />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-2">สามารถเว้นว่างได้หากยังไม่เริ่ม/เสร็จงาน</p>
                             </div>
 
                             <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
@@ -562,6 +716,116 @@ export default function ProjectDetailPage() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Progress Update Modal */}
+            {isProgressModalOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl w-full max-w-md">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                อัปเดทความคืบหน้า
+                            </h2>
+                            <button
+                                onClick={() => setIsProgressModalOpen(false)}
+                                className="p-1 hover:bg-gray-100 rounded text-gray-400"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Task Name */}
+                            <div className="bg-gray-50 rounded-lg p-3">
+                                <p className="text-xs text-gray-500">งาน</p>
+                                <p className="text-sm font-medium text-gray-900 mt-0.5">{progressUpdate.taskName}</p>
+                            </div>
+
+                            {/* Progress Change */}
+                            <div className="flex items-center justify-center gap-4 py-3">
+                                <div className="text-center">
+                                    <p className="text-2xl font-bold text-gray-400">{progressUpdate.currentProgress}%</p>
+                                    <p className="text-xs text-gray-500">ปัจจุบัน</p>
+                                </div>
+                                <div className="text-2xl text-gray-300">→</div>
+                                <div className="text-center">
+                                    <p className={`text-2xl font-bold ${progressUpdate.newProgress === 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                        {progressUpdate.newProgress}%
+                                    </p>
+                                    <p className="text-xs text-gray-500">ใหม่</p>
+                                </div>
+                            </div>
+
+                            {/* Progress Selection Buttons */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">เลือก Progress</label>
+                                <div className="flex items-center justify-center gap-2">
+                                    {[0, 25, 50, 75, 100].map((val) => (
+                                        <button
+                                            key={val}
+                                            type="button"
+                                            onClick={() => setProgressUpdate({ ...progressUpdate, newProgress: val })}
+                                            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${progressUpdate.newProgress === val
+                                                ? val === 100
+                                                    ? 'bg-green-600 text-white'
+                                                    : 'bg-blue-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            {val}%
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Date */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    วันที่อัปเดท *
+                                </label>
+                                <input
+                                    type="date"
+                                    value={progressUpdate.updateDate}
+                                    onChange={(e) => setProgressUpdate({ ...progressUpdate, updateDate: e.target.value })}
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
+                                />
+                            </div>
+
+                            {/* Reason */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    เหตุผล / หมายเหตุ
+                                </label>
+                                <textarea
+                                    value={progressUpdate.reason}
+                                    onChange={(e) => setProgressUpdate({ ...progressUpdate, reason: e.target.value })}
+                                    placeholder="เช่น งานเสร็จตามแผน, ล่าช้าเนื่องจากฝนตก..."
+                                    rows={3}
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500 resize-none"
+                                />
+                            </div>
+
+                            {/* Buttons */}
+                            <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsProgressModalOpen(false)}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                >
+                                    ยกเลิก
+                                </button>
+                                <button
+                                    onClick={handleProgressSubmit}
+                                    disabled={savingProgress || !progressUpdate.updateDate}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {savingProgress && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    บันทึก
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

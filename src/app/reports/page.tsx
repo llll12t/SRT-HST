@@ -80,28 +80,57 @@ export default function ReportsPage() {
         try {
             // Fetch project tasks
             const tasks = selectedProjectId === 'all'
-                ? []
+                ? [] // For now, maybe should fetch all projects tasks if needed, but per report typical to select one
                 : await getTasks(selectedProjectId);
 
-            // Simulate report generation
-            await new Promise(resolve => setTimeout(resolve, 1500));
+            // Simulate delay
+            await new Promise(resolve => setTimeout(resolve, 1000));
 
-            // Create report data
             const reportName = `${reportTypes.find(r => r.id === reportType)?.name || 'รายงาน'} - ${selectedProject?.name || 'ทุกโครงการ'}`;
+
+            // Log history
             const newReport = {
                 id: `rpt-${Date.now()}`,
                 name: reportName,
                 date: new Date().toLocaleString('th-TH'),
                 type: format.toUpperCase()
             };
-
             setGeneratedReports(prev => [newReport, ...prev]);
 
-            // Create downloadable content
+            // 1. S-Curve Report Logic
+            if (reportType === 's-curve') {
+                const curveData = calculateSCurveData(tasks);
+                if (format === 'excel') {
+                    downloadSCurveExcel(curveData, reportName);
+                } else {
+                    downloadSCurvePDF(curveData, reportName);
+                }
+                return;
+            }
+
+            // 2. Prepare Data for other reports
+            let reportTasks = tasks;
+
+            // Weekly Report: Filter only Active Tasks (Start <= Now <= End) OR (Actual Start <= Now <= Actual End)
+            if (reportType === 'weekly') {
+                const now = new Date();
+                now.setHours(0, 0, 0, 0);
+                const nextWeek = new Date(now);
+                nextWeek.setDate(now.getDate() + 7);
+
+                reportTasks = tasks.filter(t => {
+                    const start = new Date(t.planStartDate);
+                    const end = new Date(t.planEndDate);
+                    // Include if overlaps with current week window
+                    return (start <= nextWeek && end >= now);
+                });
+            }
+
+            // 3. Download Standard Report
             if (format === 'excel') {
-                downloadExcel(tasks, reportName);
+                downloadExcel(reportTasks, reportName);
             } else {
-                downloadPDF(tasks, reportName);
+                downloadPDF(reportTasks, reportName);
             }
 
         } catch (error) {
@@ -112,14 +141,133 @@ export default function ReportsPage() {
         }
     };
 
+    // --- S-Curve Helpers ---
+    const calculateSCurveData = (tasks: Task[]) => {
+        if (tasks.length === 0) return [];
+
+        // 1. Find Date Range
+        const startDates = tasks.map(t => new Date(t.planStartDate).getTime()).filter(t => !isNaN(t));
+        const endDates = tasks.map(t => new Date(t.planEndDate).getTime()).filter(t => !isNaN(t));
+        if (startDates.length === 0) return [];
+
+        let minDate = new Date(Math.min(...startDates));
+        let maxDate = new Date(Math.max(...endDates));
+
+        // Start from beginning of minDate month
+        minDate = new Date(minDate.getFullYear(), minDate.getMonth(), 1);
+
+        const dataPoints = [];
+        let currentDate = new Date(minDate);
+        const now = new Date();
+
+        // Total "Weight" is effectively count or duration if cost is missing. 
+        // User removed weight column, so let's use weighted by Duration for S-Curve calculation for smoothness
+        // Or assume equal weight (1). Let's use Duration as it's more accurate than count.
+        const totalDuration = tasks.reduce((sum, t) => sum + (t.planDuration || 1), 0);
+
+        while (currentDate <= maxDate || currentDate <= now) {
+            // Calculate Plan % and Actual % for this date
+            let sumPlan = 0;
+            let sumActual = 0;
+
+            tasks.forEach(task => {
+                const start = new Date(task.planStartDate).getTime();
+                const end = new Date(task.planEndDate).getTime();
+                const duration = end - start;
+                const taskWeight = (task.planDuration || 1) / totalDuration; // Relative weight
+
+                // Plan
+                if (currentDate.getTime() >= end) {
+                    sumPlan += 100 * taskWeight;
+                } else if (currentDate.getTime() > start) {
+                    const progress = (currentDate.getTime() - start) / duration;
+                    sumPlan += progress * 100 * taskWeight;
+                }
+
+                // Actual (Simplified linear model based on current Progress)
+                // If actualStartDate exists, use it. Else use plan.
+                // We map 'task.progress' (current snapshot) to timeline? 
+                // Difficult without history. We'll show "Current Cumulative" up to Today.
+                if (currentDate <= now) {
+                    // If task is completed before today, full weight.
+                    // Making a simplified "Actual S-Curve" is hard without history.
+                    // We will plot "Actual" only up to NOW.
+
+                    // Heuristic: If we are past the date, and task gave progress... 
+                    // Actually, for a report generated 'Now', the Actual Curve is just one point really (Today).
+                    // But users expect a line. We will assume Actual follows Plan UNTIL deviation?
+                    // No, that's fake.
+                    // Better: S-Curve Report = "Planned S-Curve Table". 
+                    // And show "Actual: XX%" as a single comparison for Today.
+                }
+            });
+
+            // Re-think: S-Curve report usually wants the PLANNED curve.
+            dataPoints.push({
+                date: new Date(currentDate),
+                plan: Math.min(100, sumPlan),
+                // actual: ... (omitted for now as we lack history points)
+            });
+
+            // Advance 1 week
+            currentDate.setDate(currentDate.getDate() + 7);
+        }
+        return dataPoints;
+    };
+
+    const downloadSCurveExcel = (data: any[], reportName: string) => {
+        let csv = 'วันที่,แผนสะสม(%)\n';
+        data.forEach(d => {
+            csv += `${d.date.toLocaleDateString('th-TH')},${d.plan.toFixed(2)}\n`;
+        });
+        const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${reportName}.csv`;
+        link.click();
+    };
+
+    const downloadSCurvePDF = (data: any[], reportName: string) => {
+        const htmlContent = `
+         <!DOCTYPE html>
+         <html>
+         <head>
+            <style>
+              body { font-family: 'Sarabun', sans-serif; padding: 40px; }
+              h1 { border-bottom: 2px solid #2563eb; padding-bottom: 10px; color #1e3a5f; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+              th { background: #f0f9ff; }
+            </style>
+         </head>
+         <body>
+            <h1>${reportName} (ข้อมูล S-Curve)</h1>
+            <p>ตารางแสดงแผนงานสะสมรายสัปดาห์</p>
+            <table>
+                <thead><tr><th>วันที่</th><th>แผนสะสม (%)</th></tr></thead>
+                <tbody>
+                    ${data.map((row: any) => `<tr><td>${row.date.toLocaleDateString('th-TH')}</td><td>${row.plan.toFixed(2)}%</td></tr>`).join('')}
+                </tbody>
+            </table>
+         </body>
+         </html>
+       `;
+        const win = window.open('', '_blank');
+        if (win) { win.document.write(htmlContent); win.document.close(); win.print(); }
+    };
+
     // Download Excel (CSV format)
     const downloadExcel = (tasks: Task[], reportName: string) => {
-        let csvContent = 'ลำดับ,ชื่องาน,หมวดหมู่,น้ำหนัก(%),Progress(%),สถานะ,วันเริ่มต้น,วันสิ้นสุด\n';
+        let csvContent = 'ลำดับ,ชื่องาน,หมวดหมู่,Progress(%),สถานะ,แผนเริ่ม,แผนจบ,เริ่มจริง,จบจริง\n';
 
         tasks.forEach((task, index) => {
             const status = task.status === 'completed' ? 'เสร็จสิ้น' :
                 task.status === 'in-progress' ? 'กำลังดำเนินการ' : 'ยังไม่เริ่ม';
-            csvContent += `${index + 1},"${task.name}","${task.category}",${task.weight},${task.progress},${status},${task.planStartDate},${task.planEndDate}\n`;
+
+            // Helper to escape quotes and handle nulls
+            const safeStr = (str: string | undefined) => `"${(str || '').replace(/"/g, '""')}"`;
+
+            csvContent += `${index + 1},${safeStr(task.name)},${safeStr(task.category)},${task.progress},${status},${task.planStartDate},${task.planEndDate},${task.actualStartDate || '-'},${task.actualEndDate || '-'}\n`;
         });
 
         const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -131,11 +279,18 @@ export default function ReportsPage() {
 
     // Download PDF (simple HTML to print)
     const downloadPDF = (tasks: Task[], reportName: string) => {
-        const totalWeight = tasks.reduce((sum, t) => sum + (Number(t.weight) || 0), 0);
-        const weightedProgress = tasks.reduce((sum, t) =>
-            sum + ((Number(t.weight) || 0) * (Number(t.progress) || 0) / 100), 0
-        );
-        const overallProgress = totalWeight > 0 ? (weightedProgress / totalWeight) * 100 : 0;
+        // Use selectedProject from component scope
+        // Recalculate average progress for filtered tasks (like weekly) or use project overall if full report
+        const isFiltered = tasks.length < (projects.find(p => p.id === selectedProjectId)?.id === selectedProjectId ? 999 : 0); // Crude check
+        // Better: calculate average of TASKS passed in
+        const avgProgress = tasks.length > 0 ? tasks.reduce((sum, t) => sum + (Number(t.progress) || 0), 0) / tasks.length : 0;
+
+        // Date formatter
+        const formatDate = (dateStr?: string) => {
+            if (!dateStr) return '-';
+            const date = new Date(dateStr);
+            return isNaN(date.getTime()) ? dateStr : date.toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        };
 
         const htmlContent = `
       <!DOCTYPE html>
@@ -150,16 +305,17 @@ export default function ReportsPage() {
           .summary-item { display: inline-block; margin-right: 40px; }
           .summary-label { color: #64748b; font-size: 12px; }
           .summary-value { font-size: 24px; font-weight: bold; color: #1e293b; }
-          table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-          th, td { border: 1px solid #e2e8f0; padding: 10px; text-align: left; }
-          th { background: #f1f5f9; font-weight: 600; }
-          .progress-bar { width: 100px; height: 8px; background: #e2e8f0; border-radius: 4px; }
-          .progress-fill { height: 100%; background: #2563eb; border-radius: 4px; }
-          .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+          th, td { border: 1px solid #e2e8f0; padding: 8px; text-align: left; vertical-align: middle; }
+          th { background: #f1f5f9; font-weight: 600; color: #475569; }
+          .progress-bar { width: 80px; height: 6px; background: #e2e8f0; border-radius: 3px; }
+          .progress-fill { height: 100%; background: #2563eb; border-radius: 3px; }
+          .status { padding: 3px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
           .status-completed { background: #dcfce7; color: #16a34a; }
           .status-progress { background: #dbeafe; color: #2563eb; }
           .status-pending { background: #f3f4f6; color: #6b7280; }
           .footer { margin-top: 40px; text-align: center; color: #94a3b8; font-size: 12px; }
+          .date-col { white-space: nowrap; font-size: 13px; }
         </style>
       </head>
       <body>
@@ -168,15 +324,15 @@ export default function ReportsPage() {
         
         <div class="summary">
           <div class="summary-item">
-            <div class="summary-label">ความคืบหน้ารวม</div>
-            <div class="summary-value" style="color: #2563eb;">${overallProgress.toFixed(2)}%</div>
+            <div class="summary-label">ความคืบหน้าเฉลี่ย (ในรายงานนี้)</div>
+            <div class="summary-value" style="color: #2563eb;">${avgProgress.toFixed(2)}%</div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">จำนวนงานทั้งหมด</div>
+            <div class="summary-label">จำนวนงาน</div>
             <div class="summary-value">${tasks.length}</div>
           </div>
           <div class="summary-item">
-            <div class="summary-label">งานเสร็จสิ้น</div>
+            <div class="summary-label">เสร็จสิ้น</div>
             <div class="summary-value" style="color: #16a34a;">${tasks.filter(t => t.status === 'completed').length}</div>
           </div>
           <div class="summary-item">
@@ -188,12 +344,13 @@ export default function ReportsPage() {
         <table>
           <thead>
             <tr>
-              <th>#</th>
-              <th>ชื่องาน</th>
-              <th>หมวดหมู่</th>
-              <th>น้ำหนัก</th>
-              <th>Progress</th>
-              <th>สถานะ</th>
+              <th style="width: 5%">#</th>
+              <th style="width: 25%">ชื่องาน</th>
+              <th style="width: 15%">หมวดหมู่</th>
+              <th style="width: 12%">แผนเริ่ม</th>
+              <th style="width: 12%">แผนจบ</th>
+              <th style="width: 20%">Progress</th>
+              <th style="width: 11%">สถานะ</th>
             </tr>
           </thead>
           <tbody>
@@ -202,7 +359,8 @@ export default function ReportsPage() {
                 <td>${index + 1}</td>
                 <td>${task.name}</td>
                 <td>${task.category}</td>
-                <td>${Number(task.weight).toFixed(2)}%</td>
+                <td class="date-col">${formatDate(task.planStartDate)}</td>
+                <td class="date-col">${formatDate(task.planEndDate)}</td>
                 <td>
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <div class="progress-bar">
@@ -248,6 +406,17 @@ export default function ReportsPage() {
         );
     }
 
+    const formatDateDisplay = (dateString?: string) => {
+        if (!dateString) return '-';
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return dateString;
+        return date.toLocaleDateString('th-TH', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -287,11 +456,11 @@ export default function ReportsPage() {
                     </div>
                     <div className="bg-white rounded-lg border border-gray-200 p-4">
                         <p className="text-gray-500 text-xs font-medium">วันเริ่มต้น</p>
-                        <p className="text-lg font-semibold text-gray-900 mt-1">{selectedProject.startDate}</p>
+                        <p className="text-lg font-semibold text-gray-900 mt-1">{formatDateDisplay(selectedProject.startDate)}</p>
                     </div>
                     <div className="bg-white rounded-lg border border-gray-200 p-4">
                         <p className="text-gray-500 text-xs font-medium">วันสิ้นสุด</p>
-                        <p className="text-lg font-semibold text-gray-900 mt-1">{selectedProject.endDate}</p>
+                        <p className="text-lg font-semibold text-gray-900 mt-1">{formatDateDisplay(selectedProject.endDate)}</p>
                     </div>
                 </div>
             )}

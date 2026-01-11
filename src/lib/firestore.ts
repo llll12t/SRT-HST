@@ -10,10 +10,11 @@ import {
     where,
     orderBy,
     Timestamp,
-    serverTimestamp
+    serverTimestamp,
+    writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Project, Task, WeeklyLog } from '@/types/construction';
+import { Project, Task, WeeklyLog, Member } from '@/types/construction';
 
 // ==================== PROJECTS ====================
 
@@ -49,6 +50,9 @@ export async function createProject(project: Omit<Project, 'id' | 'createdAt' | 
     });
     return docRef.id;
 }
+
+// Alias for easier import in other files
+export const addProject = createProject;
 
 export async function updateProject(projectId: string, data: Partial<Project>): Promise<void> {
     const docRef = doc(db, 'projects', projectId);
@@ -119,6 +123,9 @@ export async function createTask(task: Omit<Task, 'id' | 'createdAt' | 'updatedA
     return docRef.id;
 }
 
+// Alias for easier import
+export const addTask = createTask;
+
 export async function updateTask(taskId: string, data: Partial<Task>): Promise<void> {
     // Get task first to know projectId
     const task = await getTask(taskId);
@@ -136,21 +143,40 @@ export async function updateTask(taskId: string, data: Partial<Task>): Promise<v
 }
 
 export async function updateTaskProgress(taskId: string, progress: number): Promise<void> {
-    // Get task first to know projectId
+    // Get task first to know projectId and current state
     const task = await getTask(taskId);
     if (!task) return;
 
     const docRef = doc(db, 'tasks', taskId);
+    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
 
     let status: Task['status'] = 'not-started';
     if (progress === 100) status = 'completed';
     else if (progress > 0) status = 'in-progress';
 
-    await updateDoc(docRef, {
+    // Prepare update data
+    const updateData: Record<string, unknown> = {
         progress,
         status,
         updatedAt: serverTimestamp()
-    });
+    };
+
+    // Auto-set actualStartDate when work begins (0% -> >0%)
+    if (!task.actualStartDate && progress > 0) {
+        updateData.actualStartDate = today;
+    }
+
+    // Auto-set actualEndDate when work completes (reaches 100%)
+    if (progress === 100 && !task.actualEndDate) {
+        updateData.actualEndDate = today;
+    }
+
+    // Clear actualEndDate if progress drops below 100% (reopened task)
+    if (progress < 100 && task.actualEndDate) {
+        updateData.actualEndDate = null;
+    }
+
+    await updateDoc(docRef, updateData);
 
     // Auto-sync project progress
     await syncProjectProgress(task.projectId);
@@ -207,15 +233,65 @@ export async function calculateProjectProgress(projectId: string): Promise<numbe
 
     if (tasks.length === 0) return 0;
 
-    const totalWeight = tasks.reduce((sum, task) => sum + (Number(task.weight) || 0), 0);
-    const weightedProgress = tasks.reduce((sum, task) => sum + ((Number(task.weight) || 0) * (Number(task.progress) || 0) / 100), 0);
+    // Calculate total duration of all tasks for weighting
+    const totalDuration = tasks.reduce((sum, task) => {
+        const start = new Date(task.planStartDate);
+        const end = new Date(task.planEndDate);
+        const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        return sum + Math.max(0, duration);
+    }, 0);
 
-    return totalWeight > 0 ? (weightedProgress / totalWeight) * 100 : 0;
+    if (totalDuration <= 0) return 0;
+
+    // Calculate weighted progress based on duration
+    const weightedProgress = tasks.reduce((sum, task) => {
+        const start = new Date(task.planStartDate);
+        const end = new Date(task.planEndDate);
+        const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        const weight = (duration / totalDuration) * 100;
+        return sum + (weight * (Number(task.progress) || 0) / 100);
+    }, 0);
+
+    return weightedProgress;
 }
 
 export async function syncProjectProgress(projectId: string): Promise<void> {
-    const progress = await calculateProjectProgress(projectId);
-    await updateProject(projectId, { overallProgress: Math.round(progress * 100) / 100 });
+    try {
+        // Check if project exists first
+        const project = await getProject(projectId);
+        if (!project) {
+            console.warn(`Project ${projectId} not found, skipping progress sync`);
+            return;
+        }
+
+        const progress = await calculateProjectProgress(projectId);
+        await updateProject(projectId, { overallProgress: Math.round(progress * 100) / 100 });
+    } catch (error) {
+        console.error(`Error syncing progress for project ${projectId}:`, error);
+        // Don't throw - just log the error to prevent cascading failures
+    }
+}
+
+export async function clearAllData(): Promise<void> {
+    const projects = await getProjects();
+    const tasks = await getAllTasks();
+    // Batch delete would be better but limiting to 500, simple loop for now provided data is small
+    // Ideally use batched writes
+
+    for (const p of projects) {
+        await deleteProject(p.id);
+    }
+
+    // Deleting projects doesn't auto-delete subcollections/tasks in basic logic often, so delete tasks explicitly
+    // Firestore doesn't cascade delete automatically
+    for (const t of tasks) {
+        await deleteTask(t.id);
+        // Note: deleteTask calls syncProjectProgress, might error if project gone. 
+        // But here we don't care about sync since we nuking everything.
+    }
+
+    // Also clear logs?
+    // Let's assume yes. But simpler just projects/tasks for basic reset.
 }
 
 // ==================== SEED DATA ====================
@@ -267,4 +343,73 @@ export async function seedSampleData(): Promise<void> {
     }
 
     console.log('Sample data seeded successfully');
+}
+
+// ==================== MEMBERS ====================
+
+export async function getMembers(): Promise<Member[]> {
+    const membersRef = collection(db, 'members');
+    const q = query(membersRef, orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    })) as Member[];
+}
+
+export async function getMember(memberId: string): Promise<Member | null> {
+    const docRef = doc(db, 'members', memberId);
+    const snapshot = await getDoc(docRef);
+
+    if (!snapshot.exists()) return null;
+
+    return {
+        id: snapshot.id,
+        ...snapshot.data()
+    } as Member;
+}
+
+export async function createMember(member: Omit<Member, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    const membersRef = collection(db, 'members');
+    const docRef = await addDoc(membersRef, {
+        ...member,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+    });
+    return docRef.id;
+}
+
+export async function updateMember(memberId: string, data: Partial<Member>): Promise<void> {
+    const docRef = doc(db, 'members', memberId);
+    await updateDoc(docRef, {
+        ...data,
+        updatedAt: serverTimestamp()
+    });
+}
+
+export async function deleteMember(memberId: string): Promise<void> {
+    const docRef = doc(db, 'members', memberId);
+    await deleteDoc(docRef);
+}
+
+// Seed initial members if none exist
+export async function seedMembers(): Promise<void> {
+    const members = await getMembers();
+    if (members.length > 0) {
+        console.log('Members already exist, skipping seed');
+        return;
+    }
+
+    const defaultMembers = [
+        { name: 'Admin User', email: 'admin@company.com', phone: '081-234-5678', role: 'admin' as const },
+        { name: 'สมชาย ใจดี', email: 'somchai@company.com', phone: '082-345-6789', role: 'project_manager' as const },
+        { name: 'สมหญิง รักงาน', email: 'somying@company.com', phone: '083-456-7890', role: 'engineer' as const },
+    ];
+
+    for (const member of defaultMembers) {
+        await createMember(member);
+    }
+
+    console.log('Default members seeded successfully');
 }

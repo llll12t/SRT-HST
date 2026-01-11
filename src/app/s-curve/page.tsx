@@ -16,7 +16,7 @@ export default function SCurvePage() {
     const [weeklyLogs, setWeeklyLogs] = useState<WeeklyLog[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedProjectId, setSelectedProjectId] = useState<string>('');
-    const [viewMode, setViewMode] = useState<ViewMode>('week'); // Default to Week
+    const [viewMode, setViewMode] = useState<ViewMode>('week');
 
     useEffect(() => {
         fetchProjects();
@@ -81,12 +81,14 @@ export default function SCurvePage() {
 
             if (viewMode === 'day') {
                 bucketEnd = currentIterDate;
-                label = format(bucketEnd, 'd MMM');
+                label = format(bucketEnd, 'd MMM', { locale: th });
                 bucketId = format(bucketEnd, 'yyyy-MM-dd');
                 currentIterDate = addDays(currentIterDate, 1);
             } else if (viewMode === 'week') {
+                const weekStart = currentIterDate;
                 bucketEnd = addDays(currentIterDate, 6);
-                label = `W${index}`;
+                // Show date range like "1-7 ม.ค."
+                label = `${format(weekStart, 'd', { locale: th })}-${format(bucketEnd, 'd MMM', { locale: th })}`;
                 bucketId = index.toString();
                 currentIterDate = addDays(currentIterDate, 7);
             } else { // Month
@@ -120,18 +122,26 @@ export default function SCurvePage() {
             index++;
         }
 
-        // 2. Distribute Planned Weight
-        tasks.forEach(task => {
-            const weight = Number(task.weight) || 0;
-            if (weight <= 0) return;
-
+        // 2. Calculate Total Duration for weight distribution (since explicit weight was removed)
+        const totalDuration = tasks.reduce((sum, task) => {
             const tStart = parseISO(task.planStartDate);
             const tEnd = parseISO(task.planEndDate);
             const duration = differenceInDays(tEnd, tStart) + 1;
-            if (duration <= 0) return;
-            const weightPerDay = weight / duration;
+            return sum + Math.max(0, duration);
+        }, 0);
 
-            // Optimize: Instead of iterating days, iterate buckets and check overlap
+        // 3. Distribute Planned Progress based on Duration
+        tasks.forEach(task => {
+            const tStart = parseISO(task.planStartDate);
+            const tEnd = parseISO(task.planEndDate);
+            const duration = differenceInDays(tEnd, tStart) + 1;
+            if (duration <= 0 || totalDuration <= 0) return;
+
+            // Task's contribution to overall project = its duration / total duration * 100%
+            const taskWeight = (duration / totalDuration) * 100;
+            const weightPerDay = taskWeight / duration;
+
+            // Distribute across buckets
             buckets.forEach(bucket => {
                 // @ts-ignore
                 const bStart = bucket.bucketStart;
@@ -149,104 +159,108 @@ export default function SCurvePage() {
             });
         });
 
-        // 3. Cumulative & Actuals
-        let runningPlan = 0;
-        let runningActual = 0; // Not used directly if we interpolate logs, but useful fallback
+        // 4. Calculate ACTUAL Progress using actualStartDate and actualEndDate
+        // Reset running actual calculation
+        buckets.forEach(bucket => {
+            // @ts-ignore
+            bucket.actualProgress = 0;
+        });
 
-        const now = new Date();
-        const currentRealtimeProgress = tasks.reduce((sum, t) =>
-            sum + ((Number(t.weight) || 0) * (Number(t.progress) || 0) / 100), 0
-        );
+        // Distribute actual progress based on actual dates
+        tasks.forEach(task => {
+            const hasActualStart = task.actualStartDate && task.actualStartDate.length > 0;
+            const hasActualEnd = task.actualEndDate && task.actualEndDate.length > 0;
+            const progress = Number(task.progress) || 0;
+
+            if (progress === 0) return; // No progress, skip
+
+            // Calculate task weight based on duration
+            const plannedDuration = differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1;
+            const taskWeight = (plannedDuration / totalDuration) * 100;
+            const actualWeight = taskWeight * (progress / 100); // Actual contribution to project
+
+            // Determine actual date range
+            let actualStart, actualEnd;
+
+            if (hasActualStart) {
+                actualStart = parseISO(task.actualStartDate!);
+            } else {
+                actualStart = parseISO(task.planStartDate);
+            }
+
+            if (hasActualEnd) {
+                actualEnd = parseISO(task.actualEndDate!);
+            } else {
+                // If in progress but no end date, use current date or progress-based estimate
+                const today = new Date();
+                if (progress === 100) {
+                    actualEnd = today;
+                } else {
+                    const progressDays = Math.round(plannedDuration * (progress / 100));
+                    actualEnd = new Date(actualStart);
+                    actualEnd.setDate(actualEnd.getDate() + Math.max(0, progressDays - 1));
+                }
+            }
+
+            const actualDuration = differenceInDays(actualEnd, actualStart) + 1;
+            if (actualDuration <= 0) return;
+
+            const weightPerDay = actualWeight / actualDuration;
+
+            // Distribute across buckets
+            buckets.forEach(bucket => {
+                // @ts-ignore
+                const bStart = bucket.bucketStart;
+                // @ts-ignore
+                const bEnd = bucket.bucketEnd;
+
+                // Only add to past/current buckets
+                if (isAfter(bStart, new Date())) return;
+
+                // Find overlap
+                const overlapStart = isAfter(actualStart, bStart) ? actualStart : bStart;
+                const overlapEnd = isBefore(actualEnd, bEnd) ? actualEnd : bEnd;
+
+                if (isAfter(overlapStart, overlapEnd)) return; // No overlap
+
+                const overlapDays = differenceInDays(overlapEnd, overlapStart) + 1;
+                // @ts-ignore
+                bucket.actualProgress += (overlapDays * weightPerDay);
+            });
+        });
+
+        // 5. Calculate cumulative values
+        let runningPlan = 0;
+        let runningActual = 0;
 
         buckets.forEach((b, i) => {
-            // -- Plan --
+            // Cumulative Plan
             runningPlan += b.plannedProgress;
             if (runningPlan > 100) runningPlan = 100;
             b.cumulativePlanned = runningPlan;
 
-            // -- Actual --
-            // @ts-ignore
-            const bEnd = b.bucketEnd;
-
-            // If future, stop Actuals
-            if (isAfter(bEnd, now)) {
-                b.cumulativeActual = 0;
-                // Special case: if "now" is inside this bucket, we might show current progress?
-                // Visual preference: show line up to last COMPLETED bucket or interpolate to Now?
-                // Let's show 0 for future buckets so line stops.
-                return;
-            }
-
-            // Logic: Find the WeeklyLog closest to or exactly at this bucket end
-            // This is tricky for "Day" view because logs are only weekly.
-            // So we INTERPOLATE linearly between logs.
-
-            // Find Log matching this specific time or latest before this time
-            // Simplified: Use currentRealtimeProgress if it's the latest bucket before Now.
-            // Or linear interpolation from 0 to CurrentProgress across ProjectStart to Now.
-
-            // Robust Method: Linear Interpolation based on Total Project Progress vs Time
-            // (Assuming linear progress is a poor assumption, but better than nothing if no weekly logs).
-            // BETTER: Use Weekly Logs as keyframes.
-
-            // 1. Find log immediately before or at bEnd
-            const pastLogs = weeklyLogs.filter(l => {
-                // Assuming we can convert weekNumber to date?? No, weekNumber is abstract.
-                // We need date-based logs roughly. 
-                // If we only have 'Week 1, Week 2', we assume they map to project weeks.
-                return true;
-            }).sort((a, b) => a.weekNumber - b.weekNumber);
-
-            // Calculate "Week Number" of this bucket relative to project start for Log lookup
-            const daysFromStart = differenceInDays(bEnd, projectStart);
-            const projectWeekNum = Math.ceil((daysFromStart + 1) / 7);
-
-            const exactLog = pastLogs.find(l => l.weekNumber === projectWeekNum);
-
-            if (exactLog) {
-                b.cumulativeActual = exactLog.actualCumulativeProgress;
-            } else {
-                // Interpolation or Fallback
-                if (isSameDay(bEnd, now) || isWithinInterval(now, { start: addDays(bEnd, -6), end: addDays(bEnd, 6) })) {
-                    // Close to now? Use realtime
-                    // Actually, if we are purely "Day" view, we want specific day value.
-                    // Simple Approach: Linear Ramp up to Current Progress
-                    const totalDaysPassed = differenceInDays(now, projectStart);
-                    const currentDays = differenceInDays(bEnd, projectStart);
-                    if (totalDaysPassed > 0) {
-                        b.cumulativeActual = currentRealtimeProgress * (Math.max(0, currentDays) / totalDaysPassed);
-                        // Clamp to current
-                        if (currentDays >= totalDaysPassed) b.cumulativeActual = currentRealtimeProgress;
-                    }
-                } else {
-                    // Past day with no log? Linear ramp
-                    const totalDaysPassed = differenceInDays(now, projectStart);
-                    const currentDays = differenceInDays(bEnd, projectStart);
-                    if (totalDaysPassed > 0) {
-                        b.cumulativeActual = currentRealtimeProgress * (Math.max(0, currentDays) / totalDaysPassed);
-                    }
-                }
-            }
-        });
-
-        // Post-calcs for incremental consistency display
-        buckets.forEach((b, i) => {
-            const prev = i > 0 ? buckets[i - 1].cumulativeActual : 0;
-            // only calc incremental if both are valid (non-zero or start)
-            if (b.cumulativeActual > 0 || i === 0) {
-                b.actualProgress = Math.max(0, b.cumulativeActual - prev);
-            } else {
-                b.actualProgress = 0;
-            }
+            // Cumulative Actual
+            runningActual += b.actualProgress;
+            if (runningActual > 100) runningActual = 100;
+            b.cumulativeActual = runningActual;
         });
 
         return buckets;
     }, [selectedProject, tasks, weeklyLogs, viewMode]);
 
-    // Derived stats
-    const currentActual = tasks.reduce((sum, t) =>
-        sum + ((Number(t.weight) || 0) * (Number(t.progress) || 0) / 100), 0
-    );
+    // Derived stats - Duration-based current actual
+    const currentActual = (() => {
+        const totalDur = tasks.reduce((sum, t) => {
+            const d = differenceInDays(parseISO(t.planEndDate), parseISO(t.planStartDate)) + 1;
+            return sum + Math.max(0, d);
+        }, 0);
+        if (totalDur <= 0) return 0;
+        return tasks.reduce((sum, t) => {
+            const d = differenceInDays(parseISO(t.planEndDate), parseISO(t.planStartDate)) + 1;
+            const w = (d / totalDur) * 100;
+            return sum + (w * (Number(t.progress) || 0) / 100);
+        }, 0);
+    })();
     // Find Plan value at "Now"
     const now = new Date();
     // @ts-ignore
@@ -398,11 +412,11 @@ export default function SCurvePage() {
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase border-b border-gray-200">
                                     {viewMode === 'day' ? 'วันที่' : viewMode === 'week' ? 'สัปดาห์' : 'เดือน'}
                                 </th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-blue-600 uppercase border-b border-gray-200">Plan %</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-green-600 uppercase border-b border-gray-200">Actual %</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700 uppercase border-b border-gray-200 bg-blue-50/30">Cum. Plan</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-green-700 uppercase border-b border-gray-200 bg-green-50/30">Cum. Actual</th>
-                                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase border-b border-gray-200">Gap</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-blue-600 uppercase border-b border-gray-200">แผนงาน (%)</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-green-600 uppercase border-b border-gray-200">ผลงาน (%)</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-blue-700 uppercase border-b border-gray-200 bg-blue-50/30">แผนสะสม (%)</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-green-700 uppercase border-b border-gray-200 bg-green-50/30">ผลงานสะสม (%)</th>
+                                <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase border-b border-gray-200">ผลต่าง (%)</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -414,7 +428,7 @@ export default function SCurvePage() {
                                 return (
                                     <tr key={idx} className="hover:bg-gray-50 transition-colors">
                                         <td className="px-4 py-2.5 text-sm font-medium text-gray-900">
-                                            {viewMode === 'week' ? `Week ${data.week} (${data.date})` : data.date}
+                                            {data.date}
                                         </td>
                                         <td className="px-4 py-2.5 text-sm text-right text-gray-500">
                                             {data.plannedProgress > 0 ? `+${data.plannedProgress.toFixed(2)}` : '-'}

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/layout/Sidebar";
-import Header from "@/components/layout/Header";
+import ClientLayout from "@/components/layout/ClientLayout";
 
 export const metadata: Metadata = {
   title: "SRT-HST Construction Management",
@@ -22,19 +21,11 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body className="antialiased bg-gray-50 text-gray-900 min-h-screen">
-        <div className="flex min-h-screen">
-          {/* Sidebar */}
-          <Sidebar />
-
-          {/* Main Content */}
-          <div className="flex-1 lg:ml-64">
-            <Header />
-            <main className="p-6">
-              {children}
-            </main>
-          </div>
-        </div>
+        <ClientLayout>
+          {children}
+        </ClientLayout>
       </body>
     </html>
   );
 }
+

@@ -18,6 +18,7 @@ import {
     X
 } from 'lucide-react';
 import clsx from 'clsx';
+import { useSidebar } from '@/contexts/SidebarContext';
 
 interface NavItem {
     name: string;
@@ -37,7 +38,7 @@ const navigation: NavItem[] = [
 
 export default function Sidebar() {
     const pathname = usePathname();
-    const [collapsed, setCollapsed] = useState(false);
+    const { collapsed, toggleCollapsed } = useSidebar();
     const [mobileOpen, setMobileOpen] = useState(false);
 
     const NavContent = () => (
@@ -85,7 +86,7 @@ export default function Sidebar() {
             {/* Collapse Button */}
             <div className="p-3 border-t border-gray-200 hidden lg:block">
                 <button
-                    onClick={() => setCollapsed(!collapsed)}
+                    onClick={toggleCollapsed}
                     className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-gray-500 hover:text-gray-700 hover:bg-gray-100 transition-colors text-sm"
                 >
                     {collapsed ? (
@@ -98,28 +99,6 @@ export default function Sidebar() {
                     )}
                 </button>
             </div>
-
-            {/* Project Info */}
-            {!collapsed && (
-                <div className="p-3 border-t border-gray-200">
-                    <div className="bg-gray-50 rounded-lg p-3">
-                        <p className="text-gray-500 text-xs mb-1">โปรเจกต์ปัจจุบัน</p>
-                        <p className="text-gray-900 font-medium text-sm">Entrance 1</p>
-                        <div className="mt-2">
-                            <div className="flex items-center justify-between text-xs mb-1">
-                                <span className="text-gray-500">Progress</span>
-                                <span className="text-blue-600 font-medium">78.17%</span>
-                            </div>
-                            <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                <div
-                                    className="h-full bg-blue-600 rounded-full"
-                                    style={{ width: '78.17%' }}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 

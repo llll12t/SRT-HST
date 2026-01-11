@@ -16,21 +16,27 @@ import {
     X,
     Filter
 } from 'lucide-react';
-import { Task, Project } from '@/types/construction';
-import { getAllTasks, getProjects, createTask, updateTask, deleteTask, updateTaskProgress } from '@/lib/firestore';
+import { Task, Project, Member } from '@/types/construction';
+import { getAllTasks, getProjects, createTask, updateTask, deleteTask, updateTaskProgress, getMembers } from '@/lib/firestore';
+import { useAuth } from '@/contexts/AuthContext';
 
 type StatusFilter = 'all' | 'completed' | 'in-progress' | 'not-started' | 'delayed';
 
+
+
+
 export default function TasksPage() {
+    const { user } = useAuth();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
+    const [members, setMembers] = useState<Member[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
     const [projectFilter, setProjectFilter] = useState('all');
     const [categoryFilter, setCategoryFilter] = useState('all');
-    const [sortBy, setSortBy] = useState<'name' | 'progress' | 'weight'>('name');
+    const [sortBy, setSortBy] = useState<'name' | 'progress' | 'cost'>('name');
 
     // Modal state
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -40,13 +46,27 @@ export default function TasksPage() {
         projectId: '',
         category: '',
         name: '',
-        weight: 0,
+        weight: 1, // Hidden default
+        cost: 0,
+        quantity: '',
         planStartDate: '',
         planEndDate: '',
         planDuration: 30,
         progress: 0,
         responsible: ''
     });
+
+    // Progress update modal
+    const [isProgressModalOpen, setIsProgressModalOpen] = useState(false);
+    const [progressUpdate, setProgressUpdate] = useState({
+        taskId: '',
+        taskName: '',
+        currentProgress: 0,
+        newProgress: 0,
+        updateDate: new Date().toISOString().split('T')[0],
+        reason: ''
+    });
+    const [savingProgress, setSavingProgress] = useState(false);
 
     // Fetch data
     useEffect(() => {
@@ -56,12 +76,14 @@ export default function TasksPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [tasksData, projectsData] = await Promise.all([
+            const [tasksData, projectsData, membersData] = await Promise.all([
                 getAllTasks(),
-                getProjects()
+                getProjects(),
+                getMembers()
             ]);
             setTasks(tasksData);
             setProjects(projectsData);
+            setMembers(membersData);
         } catch (error) {
             console.error('Error fetching data:', error);
         } finally {
@@ -101,7 +123,7 @@ export default function TasksPage() {
         result.sort((a, b) => {
             if (sortBy === 'name') return a.name.localeCompare(b.name);
             if (sortBy === 'progress') return b.progress - a.progress;
-            if (sortBy === 'weight') return b.weight - a.weight;
+            if (sortBy === 'cost') return (b.cost || 0) - (a.cost || 0);
             return 0;
         });
 
@@ -146,7 +168,9 @@ export default function TasksPage() {
             projectId: projects[0]?.id || '',
             category: '',
             name: '',
-            weight: 0,
+            weight: 1,
+            cost: 0,
+            quantity: '',
             planStartDate: new Date().toISOString().slice(0, 10),
             planEndDate: '',
             planDuration: 30,
@@ -162,7 +186,9 @@ export default function TasksPage() {
             projectId: task.projectId,
             category: task.category,
             name: task.name,
-            weight: task.weight,
+            weight: task.weight || 1,
+            cost: task.cost || 0,
+            quantity: task.quantity || '',
             planStartDate: task.planStartDate,
             planEndDate: task.planEndDate,
             planDuration: task.planDuration,
@@ -188,6 +214,8 @@ export default function TasksPage() {
                     category: taskForm.category,
                     name: taskForm.name,
                     weight: taskForm.weight,
+                    cost: taskForm.cost,
+                    quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
                     planEndDate: taskForm.planEndDate,
                     planDuration: taskForm.planDuration,
@@ -201,6 +229,8 @@ export default function TasksPage() {
                     category: taskForm.category,
                     name: taskForm.name,
                     weight: taskForm.weight,
+                    cost: taskForm.cost,
+                    quantity: taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
                     planEndDate: taskForm.planEndDate,
                     planDuration: taskForm.planDuration,
@@ -233,13 +263,59 @@ export default function TasksPage() {
         }
     };
 
-    // Handle quick progress update
-    const handleProgressUpdate = async (taskId: string, progress: number) => {
+    // Handle quick progress update - open modal
+    const openProgressModal = (task: Task, progress: number) => {
+        setProgressUpdate({
+            taskId: task.id,
+            taskName: task.name,
+            currentProgress: task.progress,
+            newProgress: progress,
+            updateDate: new Date().toISOString().split('T')[0],
+            reason: ''
+        });
+        setIsProgressModalOpen(true);
+    };
+
+    // Handle progress submit with date and reason
+    const handleProgressSubmit = async () => {
+        if (!progressUpdate.taskId) return;
+
+        setSavingProgress(true);
         try {
-            await updateTaskProgress(taskId, progress);
+            const task = tasks.find(t => t.id === progressUpdate.taskId);
+            if (!task) return;
+
+            const updateData: Partial<Task> = {
+                progress: progressUpdate.newProgress,
+                status: progressUpdate.newProgress === 100 ? 'completed' : progressUpdate.newProgress > 0 ? 'in-progress' : 'not-started'
+            };
+
+            // Only set remarks if there's a value
+            if (progressUpdate.reason) {
+                updateData.remarks = progressUpdate.reason;
+            }
+
+            if (!task.actualStartDate && progressUpdate.newProgress > 0) {
+                updateData.actualStartDate = progressUpdate.updateDate;
+            }
+
+            if (progressUpdate.newProgress === 100) {
+                updateData.actualEndDate = progressUpdate.updateDate;
+            }
+
+            // Clear actualEndDate if reopening task - use empty string instead of undefined
+            if (progressUpdate.newProgress < 100 && task.actualEndDate) {
+                updateData.actualEndDate = '';
+            }
+
+            await updateTask(progressUpdate.taskId, updateData);
+            setIsProgressModalOpen(false);
             fetchData();
         } catch (error) {
             console.error('Error updating progress:', error);
+            alert('เกิดข้อผิดพลาดในการอัปเดท');
+        } finally {
+            setSavingProgress(false);
         }
     };
 
@@ -264,14 +340,16 @@ export default function TasksPage() {
                     <p className="text-gray-500 text-sm mt-0.5">จัดการและติดตามความคืบหน้างานทั้งหมด</p>
                 </div>
 
-                <button
-                    onClick={openCreateModal}
-                    disabled={projects.length === 0}
-                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
-                >
-                    <Plus className="w-4 h-4" />
-                    เพิ่มงานใหม่
-                </button>
+                {['admin', 'project_manager'].includes(user?.role || '') && (
+                    <button
+                        onClick={openCreateModal}
+                        disabled={projects.length === 0}
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50"
+                    >
+                        <Plus className="w-4 h-4" />
+                        เพิ่มงานใหม่
+                    </button>
+                )}
             </div>
 
             {/* Quick Stats */}
@@ -339,7 +417,7 @@ export default function TasksPage() {
                 >
                     <option value="name">เรียงตามชื่อ</option>
                     <option value="progress">เรียงตาม Progress</option>
-                    <option value="weight">เรียงตามน้ำหนัก</option>
+                    <option value="cost">เรียงตาม Cost</option>
                 </select>
             </div>
 
@@ -361,7 +439,7 @@ export default function TasksPage() {
                     <p className="text-gray-500 mb-4">
                         {tasks.length === 0 ? 'ยังไม่มีงาน' : 'ไม่พบงานที่ค้นหา'}
                     </p>
-                    {tasks.length === 0 && (
+                    {tasks.length === 0 && ['admin', 'project_manager'].includes(user?.role || '') && (
                         <button
                             onClick={openCreateModal}
                             className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
@@ -378,7 +456,9 @@ export default function TasksPage() {
                                 <tr>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ชื่องาน</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">โครงการ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">น้ำหนัก</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">วันที่ดำเนินการ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Cost</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Q'ty</th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Progress</th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">สถานะ</th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
@@ -402,7 +482,22 @@ export default function TasksPage() {
                                             </Link>
                                         </td>
                                         <td className="px-4 py-3 text-center">
-                                            <span className="text-sm font-medium text-blue-600">{task.weight}%</span>
+                                            <div className="flex flex-col text-xs">
+                                                <span className="text-gray-500">
+                                                    แผน: {new Date(task.planStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {new Date(task.planEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                                </span>
+                                                {task.actualStartDate && (
+                                                    <span className="text-green-600 font-medium">
+                                                        จริง: {new Date(task.actualStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {task.actualEndDate ? new Date(task.actualEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '...'}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <span className="text-sm font-medium text-gray-600">{task.cost ? task.cost.toLocaleString() : '-'}</span>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <span className="text-sm text-gray-600">{task.quantity || '-'}</span>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2 justify-center">
@@ -424,34 +519,33 @@ export default function TasksPage() {
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-center gap-1">
-                                                {/* Quick Progress - Always visible */}
-                                                <div className="flex items-center gap-0.5 mr-1">
-                                                    {[0, 50, 100].map((val) => (
-                                                        <button
-                                                            key={val}
-                                                            onClick={() => handleProgressUpdate(task.id, val)}
-                                                            className={`w-7 h-6 text-xs rounded transition-colors ${Number(task.progress) === val
-                                                                    ? 'bg-blue-100 text-blue-700 font-medium'
-                                                                    : 'bg-gray-50 text-gray-500 hover:bg-gray-100'
-                                                                }`}
-                                                        >
-                                                            {val}
-                                                        </button>
-                                                    ))}
-                                                </div>
+                                                {/* Update Progress: Admin, PM, Engineer */}
+                                                {['admin', 'project_manager', 'engineer'].includes(user?.role || '') && (
+                                                    <button
+                                                        onClick={() => openProgressModal(task, task.progress)}
+                                                        className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors border border-blue-200"
+                                                    >
+                                                        อัปเดท
+                                                    </button>
+                                                )}
 
-                                                <button
-                                                    onClick={() => openEditModal(task)}
-                                                    className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"
-                                                >
-                                                    <Edit2 className="w-4 h-4" />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(task.id)}
-                                                    className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                                {/* Edit/Delete: Admin, PM */}
+                                                {['admin', 'project_manager'].includes(user?.role || '') && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => openEditModal(task)}
+                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"
+                                                        >
+                                                            <Edit2 className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDelete(task.id)}
+                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -504,12 +598,22 @@ export default function TasksPage() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1.5">หมวดหมู่ *</label>
                                 <input
                                     type="text"
+                                    list="category-list"
                                     required
                                     value={taskForm.category}
                                     onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}
-                                    placeholder="เช่น งานเตรียมการ, งานรั้ว Area 1"
+                                    placeholder="เลือกหรือพิมพ์หมวดหมู่ใหม่..."
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
                                 />
+                                <datalist id="category-list">
+                                    {[...new Set(
+                                        tasks
+                                            .filter(t => !taskForm.projectId || t.projectId === taskForm.projectId)
+                                            .map(t => t.category)
+                                    )].map((c, i) => (
+                                        <option key={i} value={c} />
+                                    ))}
+                                </datalist>
                             </div>
 
                             <div>
@@ -526,15 +630,23 @@ export default function TasksPage() {
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">น้ำหนักงาน (%) *</label>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Cost (Baht)</label>
                                     <input
                                         type="number"
-                                        required
                                         min="0"
-                                        max="100"
                                         step="0.01"
-                                        value={taskForm.weight}
-                                        onChange={(e) => setTaskForm({ ...taskForm, weight: parseFloat(e.target.value) || 0 })}
+                                        value={taskForm.cost}
+                                        onChange={(e) => setTaskForm({ ...taskForm, cost: parseFloat(e.target.value) || 0 })}
+                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">Quantity (Q'ty)</label>
+                                    <input
+                                        type="text"
+                                        value={taskForm.quantity}
+                                        onChange={(e) => setTaskForm({ ...taskForm, quantity: e.target.value })}
+                                        placeholder="e.g. 50 m2"
                                         className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
                                     />
                                 </div>
@@ -578,11 +690,17 @@ export default function TasksPage() {
                                 <label className="block text-sm font-medium text-gray-700 mb-1.5">ผู้รับผิดชอบ</label>
                                 <input
                                     type="text"
+                                    list="member-list"
                                     value={taskForm.responsible}
                                     onChange={(e) => setTaskForm({ ...taskForm, responsible: e.target.value })}
-                                    placeholder="ชื่อผู้รับผิดชอบ"
+                                    placeholder="เลือกหรือพิมพ์ชื่อผู้รับผิดชอบ..."
                                     className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
                                 />
+                                <datalist id="member-list">
+                                    {members.map((member) => (
+                                        <option key={member.id} value={member.name}>{member.name} ({member.role})</option>
+                                    ))}
+                                </datalist>
                             </div>
 
                             <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
@@ -603,6 +721,116 @@ export default function TasksPage() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* Progress Update Modal */}
+            {isProgressModalOpen && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl w-full max-w-md">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                อัปเดทความคืบหน้า
+                            </h2>
+                            <button
+                                onClick={() => setIsProgressModalOpen(false)}
+                                className="p-1 hover:bg-gray-100 rounded text-gray-400"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {/* Task Name */}
+                            <div className="bg-gray-50 rounded-lg p-3">
+                                <p className="text-xs text-gray-500">งาน</p>
+                                <p className="text-sm font-medium text-gray-900 mt-0.5">{progressUpdate.taskName}</p>
+                            </div>
+
+                            {/* Progress Change */}
+                            <div className="flex items-center justify-center gap-4 py-3">
+                                <div className="text-center">
+                                    <p className="text-2xl font-bold text-gray-400">{progressUpdate.currentProgress}%</p>
+                                    <p className="text-xs text-gray-500">ปัจจุบัน</p>
+                                </div>
+                                <div className="text-2xl text-gray-300">→</div>
+                                <div className="text-center">
+                                    <p className={`text-2xl font-bold ${progressUpdate.newProgress === 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                        {progressUpdate.newProgress}%
+                                    </p>
+                                    <p className="text-xs text-gray-500">ใหม่</p>
+                                </div>
+                            </div>
+
+                            {/* Progress Selection Buttons */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">เลือก Progress</label>
+                                <div className="flex items-center justify-center gap-2">
+                                    {[0, 25, 50, 75, 100].map((val) => (
+                                        <button
+                                            key={val}
+                                            type="button"
+                                            onClick={() => setProgressUpdate({ ...progressUpdate, newProgress: val })}
+                                            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${progressUpdate.newProgress === val
+                                                ? val === 100
+                                                    ? 'bg-green-600 text-white'
+                                                    : 'bg-blue-600 text-white'
+                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                                }`}
+                                        >
+                                            {val}%
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Date */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    วันที่อัปเดท *
+                                </label>
+                                <input
+                                    type="date"
+                                    value={progressUpdate.updateDate}
+                                    onChange={(e) => setProgressUpdate({ ...progressUpdate, updateDate: e.target.value })}
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
+                                />
+                            </div>
+
+                            {/* Reason */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                                    เหตุผล / หมายเหตุ
+                                </label>
+                                <textarea
+                                    value={progressUpdate.reason}
+                                    onChange={(e) => setProgressUpdate({ ...progressUpdate, reason: e.target.value })}
+                                    placeholder="เช่น งานเสร็จตามแผน, ล่าช้าเนื่องจากฝนตก..."
+                                    rows={3}
+                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500 resize-none"
+                                />
+                            </div>
+
+                            {/* Buttons */}
+                            <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsProgressModalOpen(false)}
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                >
+                                    ยกเลิก
+                                </button>
+                                <button
+                                    onClick={handleProgressSubmit}
+                                    disabled={savingProgress || !progressUpdate.updateDate}
+                                    className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                                >
+                                    {savingProgress && <Loader2 className="w-4 h-4 animate-spin" />}
+                                    บันทึก
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
