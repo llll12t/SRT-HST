@@ -64,8 +64,8 @@ export default function DashboardPage() {
   const generateSCurveData = (): SCurveDataPoint[] => {
     if (filteredTasks.length === 0) return [];
 
-    const totalWeight = filteredTasks.reduce((sum, t) => sum + (Number(t.weight) || 0), 0);
-    if (totalWeight === 0) return [];
+    const totalDuration = filteredTasks.reduce((sum, t) => sum + (Number(t.planDuration) || 0), 0);
+    if (totalDuration === 0) return [];
 
     // Generate weekly data points
     const weeks: SCurveDataPoint[] = [];
@@ -79,8 +79,8 @@ export default function DashboardPage() {
 
       // Actual based on current task progress
       const actualProgress = filteredTasks.reduce((sum, t) =>
-        sum + ((Number(t.weight) || 0) * (Number(t.progress) || 0) / 100), 0
-      ) / totalWeight * 100;
+        sum + ((Number(t.planDuration) || 0) * (Number(t.progress) || 0) / 100), 0
+      ) / totalDuration * 100;
       cumulativeActual = Math.min(actualProgress, cumulativePlanned * 1.1);
 
       weeks.push({
@@ -103,7 +103,7 @@ export default function DashboardPage() {
 
   // Get tasks that need attention (not started but should be)
   const tasksNeedAttention = filteredTasks
-    .filter(t => t.status === 'not-started' && (Number(t.weight) || 0) > 0)
+    .filter(t => t.status === 'not-started' && (Number(t.planDuration) || 0) > 0)
     .slice(0, 5);
 
   if (loading) {
@@ -256,7 +256,7 @@ export default function DashboardPage() {
                     <p className="text-xs text-gray-500 mt-0.5">{task.category}</p>
                   </div>
                   <div className="flex items-center gap-3 ml-4">
-                    <span className="text-xs text-gray-400">{Number(task.weight).toFixed(2)}%</span>
+                    <span className="text-xs text-gray-400">{Number(task.planDuration)} วัน</span>
                     <span className="badge badge-warning">รอเริ่มงาน</span>
                   </div>
                 </div>

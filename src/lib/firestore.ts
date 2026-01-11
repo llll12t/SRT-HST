@@ -343,13 +343,13 @@ export async function seedSampleData(): Promise<void> {
 
     // Create sample tasks
     const sampleTasks = [
-        { category: 'งานเตรียมการ', name: 'งานเขียนแบบและตรวจสร้าง', weight: 1.80, progress: 100 },
-        { category: 'งานเตรียมการ', name: 'งานเตรียมการในการก่อสร้าง', weight: 2.24, progress: 100 },
-        { category: 'งานรั้ว Area 1', name: 'Fence type "F" (No.123-144) ไม่เสียพื้น', weight: 1.93, progress: 100 },
-        { category: 'งานรั้ว Area 1', name: 'Fence type "F" (No.137-122)', weight: 0.91, progress: 98 },
-        { category: 'งานรั้ว Area 1', name: 'Fence type "F" (No.108-119)', weight: 1.12, progress: 98 },
-        { category: 'งานรั้ว Area 2', name: 'Concrete road entrance ซอย 3, A2', weight: 2.24, progress: 0 },
-        { category: 'งานรั้ว Area 2', name: 'Concrete road entrance ซอย 4, A2', weight: 4.04, progress: 0 },
+        { category: 'งานเตรียมการ', name: 'งานเขียนแบบและตรวจสร้าง', progress: 100 },
+        { category: 'งานเตรียมการ', name: 'งานเตรียมการในการก่อสร้าง', progress: 100 },
+        { category: 'งานรั้ว Area 1', name: 'Fence type "F" (No.123-144) ไม่เสียพื้น', progress: 100 },
+        { category: 'งานรั้ว Area 1', name: 'Fence type "F" (No.137-122)', progress: 98 },
+        { category: 'งานรั้ว Area 1', name: 'Fence type "F" (No.108-119)', progress: 98 },
+        { category: 'งานรั้ว Area 2', name: 'Concrete road entrance ซอย 3, A2', progress: 0 },
+        { category: 'งานรั้ว Area 2', name: 'Concrete road entrance ซอย 4, A2', progress: 0 },
     ];
 
     for (let i = 0; i < sampleTasks.length; i++) {
@@ -358,7 +358,6 @@ export async function seedSampleData(): Promise<void> {
             projectId,
             category: task.category,
             name: task.name,
-            weight: task.weight,
             planStartDate: '2024-09-01',
             planEndDate: '2025-04-30',
             planDuration: 240,
