@@ -122,31 +122,45 @@ export default function SCurvePage() {
             index++;
         }
 
-        // 2. Calculate Total Duration for weight distribution (since explicit weight was removed)
-        const totalDuration = tasks.reduce((sum, task) => {
-            const tStart = parseISO(task.planStartDate);
-            const tEnd = parseISO(task.planEndDate);
-            const duration = differenceInDays(tEnd, tStart) + 1;
-            return sum + Math.max(0, duration);
+        // 2. Calculate Total Weight (Cost preferred, fallback to Duration)
+        const useCostWeighting = tasks.some(t => (t.cost || 0) > 0);
+
+        const totalWeight = tasks.reduce((sum, task) => {
+            if (useCostWeighting) {
+                return sum + (task.cost || 0);
+            } else {
+                const tStart = parseISO(task.planStartDate);
+                const tEnd = parseISO(task.planEndDate);
+                const duration = differenceInDays(tEnd, tStart) + 1;
+                return sum + Math.max(0, duration);
+            }
         }, 0);
 
-        // 3. Distribute Planned Progress based on Duration
+        // 3. Distribute Planned Progress based on Weight
         tasks.forEach(task => {
             const tStart = parseISO(task.planStartDate);
             const tEnd = parseISO(task.planEndDate);
             const duration = differenceInDays(tEnd, tStart) + 1;
-            if (duration <= 0 || totalDuration <= 0) return;
 
-            // Task's contribution to overall project = its duration / total duration * 100%
-            const taskWeight = (duration / totalDuration) * 100;
-            const weightPerDay = taskWeight / duration;
+            if (duration <= 0 || totalWeight <= 0) return;
+
+            // Calculate Task Weight
+            let taskValue = 0;
+            if (useCostWeighting) {
+                taskValue = task.cost || 0;
+            } else {
+                taskValue = duration;
+            }
+
+            const taskWeightPercent = (taskValue / totalWeight) * 100;
+            const weightPerDay = taskWeightPercent / duration;
 
             // Distribute across buckets
             buckets.forEach(bucket => {
                 // @ts-ignore
-                const bStart = bucket.bucketStart;
+                const bStart = bucket.bucketStart!;
                 // @ts-ignore
-                const bEnd = bucket.bucketEnd;
+                const bEnd = bucket.bucketEnd!;
 
                 // Find overlap
                 const overlapStart = isAfter(tStart, bStart) ? tStart : bStart;
@@ -159,63 +173,76 @@ export default function SCurvePage() {
             });
         });
 
-        // 4. Calculate ACTUAL Progress using actualStartDate and actualEndDate
+        // 4. Calculate ACTUAL Progress using actualStartDate and progressUpdatedAt
         // Reset running actual calculation
         buckets.forEach(bucket => {
             // @ts-ignore
             bucket.actualProgress = 0;
         });
 
-        // Distribute actual progress based on actual dates
+        // Distribute actual progress
         tasks.forEach(task => {
-            const hasActualStart = task.actualStartDate && task.actualStartDate.length > 0;
-            const hasActualEnd = task.actualEndDate && task.actualEndDate.length > 0;
             const progress = Number(task.progress) || 0;
-
             if (progress === 0) return; // No progress, skip
 
-            // Calculate task weight based on duration
-            const plannedDuration = differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1;
-            const taskWeight = (plannedDuration / totalDuration) * 100;
-            const actualWeight = taskWeight * (progress / 100); // Actual contribution to project
-
-            // Determine actual date range
-            let actualStart, actualEnd;
-
-            if (hasActualStart) {
-                actualStart = parseISO(task.actualStartDate!);
+            // Calculate Task Weight (Same as Plan)
+            let taskValue = 0;
+            if (useCostWeighting) {
+                taskValue = task.cost || 0;
             } else {
-                actualStart = parseISO(task.planStartDate);
+                const tStart = parseISO(task.planStartDate);
+                const tEnd = parseISO(task.planEndDate);
+                taskValue = differenceInDays(tEnd, tStart) + 1;
             }
 
-            if (hasActualEnd) {
-                actualEnd = parseISO(task.actualEndDate!);
+            const taskWeightPercent = (taskValue / totalWeight) * 100;
+            const actualWeightContribution = taskWeightPercent * (progress / 100);
+
+            // Determine actual date range
+            let actualStart;
+            let actualEnd;
+
+            // Start Date
+            if (task.actualStartDate) {
+                actualStart = parseISO(task.actualStartDate);
             } else {
-                // If in progress but no end date, use current date or progress-based estimate
-                const today = new Date();
-                if (progress === 100) {
-                    actualEnd = today;
+                actualStart = parseISO(task.planStartDate); // Fallback
+            }
+
+            // End Date
+            if (task.status === 'completed' && task.actualEndDate) {
+                actualEnd = parseISO(task.actualEndDate);
+            } else {
+                // In progress: Use update date or today
+                if (task.progressUpdatedAt) {
+                    actualEnd = parseISO(task.progressUpdatedAt);
                 } else {
-                    const progressDays = Math.round(plannedDuration * (progress / 100));
-                    actualEnd = new Date(actualStart);
-                    actualEnd.setDate(actualEnd.getDate() + Math.max(0, progressDays - 1));
+                    actualEnd = new Date(); // Fallback to today
+                }
+
+                // Safety: actualEnd cannot be before actualStart
+                if (isBefore(actualEnd, actualStart)) {
+                    actualEnd = actualStart;
                 }
             }
 
             const actualDuration = differenceInDays(actualEnd, actualStart) + 1;
-            if (actualDuration <= 0) return;
 
-            const weightPerDay = actualWeight / actualDuration;
+            // If duration is 0 (started and finished same day), weightPerDay = total weight
+            const weightPerDay = actualDuration > 0 ? actualWeightContribution / actualDuration : actualWeightContribution;
 
             // Distribute across buckets
             buckets.forEach(bucket => {
                 // @ts-ignore
-                const bStart = bucket.bucketStart;
+                const bStart = bucket.bucketStart!;
                 // @ts-ignore
-                const bEnd = bucket.bucketEnd;
+                const bEnd = bucket.bucketEnd!;
 
-                // Only add to past/current buckets
-                if (isAfter(bStart, new Date())) return;
+                // Stop future projections for Actual curve?
+                // Typically S-Curves stop actual line at "Data Date" (Today).
+                // But if we have valid backdated data, we map it.
+                // We shouldn't map actual progress into the future relative to "Now" usually, 
+                // but if actualEnd (progressUpdatedAt) is in future (rare), we map it.
 
                 // Find overlap
                 const overlapStart = isAfter(actualStart, bStart) ? actualStart : bStart;
@@ -248,17 +275,35 @@ export default function SCurvePage() {
         return buckets;
     }, [selectedProject, tasks, weeklyLogs, viewMode]);
 
-    // Derived stats - Duration-based current actual
+    // Derived stats - Weight-based current actual
     const currentActual = (() => {
-        const totalDur = tasks.reduce((sum, t) => {
-            const d = differenceInDays(parseISO(t.planEndDate), parseISO(t.planStartDate)) + 1;
-            return sum + Math.max(0, d);
+        const useCostWeighting = tasks.some(t => (t.cost || 0) > 0);
+
+        const totalWeight = tasks.reduce((sum, task) => {
+            if (useCostWeighting) {
+                return sum + (task.cost || 0);
+            } else {
+                const tStart = parseISO(task.planStartDate);
+                const tEnd = parseISO(task.planEndDate);
+                const duration = differenceInDays(tEnd, tStart) + 1;
+                return sum + Math.max(0, duration);
+            }
         }, 0);
-        if (totalDur <= 0) return 0;
-        return tasks.reduce((sum, t) => {
-            const d = differenceInDays(parseISO(t.planEndDate), parseISO(t.planStartDate)) + 1;
-            const w = (d / totalDur) * 100;
-            return sum + (w * (Number(t.progress) || 0) / 100);
+
+        if (totalWeight <= 0) return 0;
+
+        return tasks.reduce((sum, task) => {
+            let taskValue = 0;
+            if (useCostWeighting) {
+                taskValue = task.cost || 0;
+            } else {
+                const tStart = parseISO(task.planStartDate);
+                const tEnd = parseISO(task.planEndDate);
+                taskValue = differenceInDays(tEnd, tStart) + 1;
+            }
+
+            const taskWeightPercent = (taskValue / totalWeight) * 100;
+            return sum + (taskWeightPercent * (Number(task.progress) || 0) / 100);
         }, 0);
     })();
     // Find Plan value at "Now"

@@ -11,12 +11,24 @@ interface GanttChartProps {
     startDate?: string;
     endDate?: string;
     title?: string;
+    viewMode?: ViewMode;
+    onViewModeChange?: (mode: ViewMode) => void;
 }
 
 type ViewMode = 'day' | 'week' | 'month';
 
-export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = '2025-04-30', title }: GanttChartProps) {
-    const [viewMode, setViewMode] = useState<ViewMode>('week');
+export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = '2025-04-30', title, viewMode: controlledViewMode, onViewModeChange }: GanttChartProps) {
+    const [internalViewMode, setInternalViewMode] = useState<ViewMode>('week');
+    const viewMode = controlledViewMode || internalViewMode;
+
+    const handleViewModeChange = (mode: ViewMode) => {
+        if (onViewModeChange) {
+            onViewModeChange(mode);
+        } else {
+            setInternalViewMode(mode);
+        }
+    };
+
     const [showDates, setShowDates] = useState(true);
     const [currentDate, setCurrentDate] = useState(new Date());
     const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -225,7 +237,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
 
                 <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-lg border border-gray-100">
                     {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
-                        <button key={mode} onClick={() => setViewMode(mode)}
+                        <button key={mode} onClick={() => handleViewModeChange(mode)}
                             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all capitalize ${viewMode === mode ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-900'
                                 }`}>
                             {mode === 'day' ? 'วัน' : mode === 'week' ? 'สัปดาห์' : 'เดือน'}

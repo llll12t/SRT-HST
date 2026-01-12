@@ -30,12 +30,12 @@ import { getProjects, getAllTasks, seedSampleData, addProject, addTask, clearAll
 import { Task, Project, Member } from '@/types/construction';
 import { useAuth } from '@/contexts/AuthContext';
 
-type TabType = 'profile' | 'notifications' | 'appearance' | 'security' | 'members' | 'system';
+type TabType = 'profile' | 'members' | 'system';
 
 interface UserSettings {
     profile: {
         name: string;
-        username: string;
+
         email: string;
         phone: string;
         position: string;
@@ -65,7 +65,7 @@ interface UserSettings {
 const defaultSettings: UserSettings = {
     profile: {
         name: 'Admin User',
-        username: 'admin',
+
         email: 'admin@company.com',
         phone: '081-234-5678',
         position: 'Project Manager',
@@ -165,8 +165,7 @@ export default function SettingsPage() {
                         email: match.email,
                         phone: match.phone || '',
                         position: match.position || (match.role === 'admin' ? 'Administrator' : match.role),
-                        department: match.department || '',
-                        username: match.username || ''
+                        department: match.department || ''
                     }
                 }));
             }
@@ -188,8 +187,7 @@ export default function SettingsPage() {
                     email: settings.profile.email,
                     phone: settings.profile.phone,
                     position: settings.profile.position,
-                    department: settings.profile.department,
-                    username: settings.profile.username
+                    department: settings.profile.department
                 });
 
                 // Refresh members to reflect changes in list
@@ -506,9 +504,6 @@ export default function SettingsPage() {
     const allTabs = [
         { id: 'profile', label: 'โปรไฟล์', icon: User, roles: ['admin', 'project_manager', 'engineer', 'viewer'] },
         { id: 'members', label: 'สมาชิก', icon: Users, roles: ['admin'] },
-        { id: 'notifications', label: 'การแจ้งเตือน', icon: Bell, roles: ['admin', 'project_manager', 'engineer', 'viewer'] },
-        { id: 'appearance', label: 'รูปแบบ', icon: Palette, roles: ['admin', 'project_manager', 'engineer', 'viewer'] },
-        { id: 'security', label: 'ความปลอดภัย', icon: Shield, roles: ['admin', 'project_manager', 'engineer', 'viewer'] },
         { id: 'system', label: 'ระบบ', icon: Database, roles: ['admin'] },
     ];
 
@@ -610,15 +605,7 @@ export default function SettingsPage() {
                                             className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">ชื่อผู้ใช้งาน (Username)</label>
-                                        <input
-                                            type="text"
-                                            value={settings.profile.username}
-                                            onChange={(e) => updateProfile('username', e.target.value)}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
-                                        />
-                                    </div>
+
                                 </div>
                             </div>
                         </div>

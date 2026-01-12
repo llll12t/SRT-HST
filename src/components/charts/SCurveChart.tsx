@@ -30,7 +30,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
         return (
             <div className="bg-white border border-gray-200 rounded-lg p-3 shadow-lg text-sm z-50">
-                <p className="text-gray-900 font-semibold mb-2">สัปดาห์ที่ {data?.week} ({data?.date})</p>
+                <p className="text-gray-900 font-semibold mb-2">{data?.date}</p>
                 <div className="space-y-1.5">
                     <div className="flex items-center justify-between gap-4">
                         <span className="text-blue-600 font-medium">Plan (แผน):</span>
@@ -103,14 +103,13 @@ export default function SCurveChart({ data, currentProgress = 0, title = "S-Curv
                         <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" vertical={false} />
 
                         <XAxis
-                            dataKey="week"
+                            dataKey="date"
                             stroke="#9ca3af"
                             tick={{ fill: '#6b7280', fontSize: 11 }}
                             tickLine={false}
                             axisLine={{ stroke: '#e5e7eb' }}
-                            interval="preserveStartEnd" // Try to show essential ticks
+                            interval="preserveStartEnd"
                             minTickGap={30}
-                            tickFormatter={(val) => `W${val}`}
                         />
 
                         <YAxis

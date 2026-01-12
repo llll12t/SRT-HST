@@ -1,4 +1,4 @@
-// Sample data based on the uploaded construction schedule images
+﻿// Sample data based on the uploaded construction schedule images
 import { Task, WeeklyLog, SCurveDataPoint } from '@/types/construction';
 
 export const sampleProject = {

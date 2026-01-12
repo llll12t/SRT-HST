@@ -142,7 +142,7 @@ export default function LoginPage() {
                 {/* Footer */}
                 <div className="text-center mt-6">
                     <p className="text-gray-400 text-xs">
-                        © 2024 SRT-HST Construction Management System
+                        © 2026 SRT-HST Construction Management System
                     </p>
                 </div>
             </div>

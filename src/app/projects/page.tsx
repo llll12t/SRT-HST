@@ -19,20 +19,23 @@ import {
     Edit2,
     Trash2,
     Loader2,
-    AlertTriangle
+    AlertTriangle,
+    BarChart3,
+    GanttChartSquare
 } from 'lucide-react';
 import { Project } from '@/types/construction';
 import { getProjects, createProject, updateProject, deleteProject } from '@/lib/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 
-type StatusType = 'all' | 'planning' | 'in-progress' | 'completed' | 'on-hold';
+type StatusType = 'all' | 'active' | 'planning' | 'in-progress' | 'completed' | 'on-hold';
 
 export default function ProjectsPage() {
     const { user } = useAuth();
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
-    const [statusFilter, setStatusFilter] = useState<StatusType>('all');
+    // Default to 'active'
+    const [statusFilter, setStatusFilter] = useState<StatusType>('active');
     const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
     // Modal states
@@ -77,7 +80,16 @@ export default function ProjectsPage() {
     const filteredProjects = projects.filter(project => {
         const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             (project.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesStatus = statusFilter === 'all' || project.status === statusFilter;
+
+        let matchesStatus = true;
+        if (statusFilter === 'all') {
+            matchesStatus = true;
+        } else if (statusFilter === 'active') {
+            matchesStatus = ['planning', 'in-progress'].includes(project.status);
+        } else {
+            matchesStatus = project.status === statusFilter;
+        }
+
         return matchesSearch && matchesStatus;
     });
 
@@ -191,10 +203,10 @@ export default function ProjectsPage() {
     // Status config
     const getStatusConfig = (status: string) => {
         const configs: Record<string, { label: string; class: string; icon: React.ReactNode }> = {
-            'planning': { label: 'วางแผน', class: 'badge-neutral', icon: <Clock className="w-3 h-3" /> },
-            'in-progress': { label: 'กำลังดำเนินการ', class: 'badge-info', icon: <TrendingUp className="w-3 h-3" /> },
-            'completed': { label: 'เสร็จสิ้น', class: 'badge-success', icon: <CheckCircle2 className="w-3 h-3" /> },
-            'on-hold': { label: 'ระงับชั่วคราว', class: 'badge-warning', icon: <AlertCircle className="w-3 h-3" /> },
+            'planning': { label: 'วางแผน', class: 'bg-gray-100 text-gray-700 border-gray-200', icon: <Clock className="w-3 h-3" /> },
+            'in-progress': { label: 'กำลังดำเนินการ', class: 'bg-blue-50 text-blue-700 border-blue-200', icon: <TrendingUp className="w-3 h-3" /> },
+            'completed': { label: 'เสร็จสิ้น', class: 'bg-green-50 text-green-700 border-green-200', icon: <CheckCircle2 className="w-3 h-3" /> },
+            'on-hold': { label: 'ระงับชั่วคราว', class: 'bg-amber-50 text-amber-700 border-amber-200', icon: <AlertCircle className="w-3 h-3" /> },
         };
         return configs[status] || configs['planning'];
     };
@@ -258,13 +270,15 @@ export default function ProjectsPage() {
                 <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as StatusType)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 transition-colors"
+                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 transition-colors font-medium text-gray-700"
                 >
-                    <option value="all">ทุกสถานะ</option>
+                    <option value="active">⚡ ดำเนินการอยู่ (Active)</option>
+                    <option value="all">ทั้งหมด (All)</option>
+                    <option disabled>──────────</option>
                     <option value="planning">วางแผน</option>
                     <option value="in-progress">กำลังดำเนินการ</option>
-                    <option value="completed">เสร็จสิ้น</option>
                     <option value="on-hold">ระงับชั่วคราว</option>
+                    <option value="completed">เสร็จสิ้น</option>
                 </select>
 
                 <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg overflow-hidden">
@@ -311,19 +325,39 @@ export default function ProjectsPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {filteredProjects.map((project) => {
                             const statusConfig = getStatusConfig(project.status);
+                            const isCompleted = project.status === 'completed';
+                            const isOnHold = project.status === 'on-hold';
+
                             return (
                                 <div
                                     key={project.id}
-                                    className="bg-white rounded-lg border border-gray-200 p-5 hover:border-blue-300 hover:shadow-md transition-all group"
+                                    className={`
+                                        rounded-lg border p-5 hover:shadow-md transition-all group relative overflow-hidden
+                                        ${isCompleted ? 'bg-green-50/30 border-green-200' :
+                                            isOnHold ? 'bg-amber-50/30 border-amber-200 opacity-90' :
+                                                'bg-white border-gray-200 hover:border-blue-300'}
+                                    `}
                                 >
+                                    {isCompleted && (
+                                        <div className="absolute right-0 top-0 w-20 h-20 overflow-hidden pointer-events-none">
+                                            <div className="absolute top-[10px] right-[-30px] w-[100px] h-[30px] bg-green-500/10 -rotate-45 transform" />
+                                        </div>
+                                    )}
+
                                     {/* Header */}
-                                    <div className="flex items-start justify-between mb-3">
+                                    <div className="flex items-start justify-between mb-3 relative z-10">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center">
+                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center
+                                                ${isCompleted ? 'bg-green-100 text-green-600' :
+                                                    isOnHold ? 'bg-amber-100 text-amber-600' :
+                                                        'bg-blue-50 text-blue-600'}
+                                            `}>
                                                 <Building2 className="w-5 h-5" />
                                             </div>
                                             <div>
-                                                <h3 className="font-medium text-gray-900">{project.name}</h3>
+                                                <h3 className={`font-medium ${isCompleted ? 'text-green-900' : 'text-gray-900'}`}>
+                                                    {project.name}
+                                                </h3>
                                                 <p className="text-xs text-gray-400">{project.owner}</p>
                                             </div>
                                         </div>
@@ -399,16 +433,36 @@ export default function ProjectsPage() {
 
                                     {/* Footer */}
                                     <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                        <span className={`badge ${statusConfig.class} inline-flex items-center gap-1`}>
-                                            {statusConfig.icon}
-                                            {statusConfig.label}
-                                        </span>
-                                        <Link
-                                            href={`/projects/${project.id}`}
-                                            className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                                        >
-                                            รายละเอียด →
-                                        </Link>
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${statusConfig.class}`}>
+                                                {statusConfig.icon}
+                                                {statusConfig.label}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <Link
+                                                href={`/s-curve?project=${project.id}`}
+                                                className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                                                title="S-Curve"
+                                            >
+                                                <BarChart3 className="w-3.5 h-3.5" />
+                                                S-Curve
+                                            </Link>
+                                            <Link
+                                                href={`/gantt?projectId=${project.id}`}
+                                                className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                                                title="Gantt Chart"
+                                            >
+                                                <GanttChartSquare className="w-3.5 h-3.5" />
+                                                Gantt
+                                            </Link>
+                                            <Link
+                                                href={`/projects/${project.id}`}
+                                                className="text-sm text-blue-600 hover:text-blue-700 font-medium ml-1"
+                                            >
+                                                รายละเอียด →
+                                            </Link>
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -424,17 +478,33 @@ export default function ProjectsPage() {
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">เจ้าของ</th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Progress</th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">สถานะ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">เครื่องมือ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">จัดการ</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
                                 {filteredProjects.map((project) => {
                                     const statusConfig = getStatusConfig(project.status);
+                                    const isCompleted = project.status === 'completed';
+                                    const isOnHold = project.status === 'on-hold';
+
                                     return (
-                                        <tr key={project.id} className="hover:bg-gray-50 transition-colors">
+                                        <tr
+                                            key={project.id}
+                                            className={`
+                                                transition-colors
+                                                ${isCompleted ? 'bg-green-50/10 hover:bg-green-50/30' :
+                                                    isOnHold ? 'bg-amber-50/10 hover:bg-amber-50/30 opacity-90' :
+                                                        'hover:bg-gray-50'}
+                                            `}
+                                        >
                                             <td className="px-4 py-3">
-                                                <p className="text-sm font-medium text-gray-900">{project.name}</p>
-                                                <p className="text-xs text-gray-400">{project.startDate} → {project.endDate}</p>
+                                                <Link href={`/projects/${project.id}`} className="block group">
+                                                    <p className={`text-sm font-medium transition-colors ${isCompleted ? 'text-green-900' : 'text-gray-900 group-hover:text-blue-600'}`}>
+                                                        {project.name}
+                                                    </p>
+                                                    <p className="text-xs text-gray-400">{project.startDate} → {project.endDate}</p>
+                                                </Link>
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-600">{project.owner}</td>
                                             <td className="px-4 py-3">
@@ -452,10 +522,28 @@ export default function ProjectsPage() {
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 text-center">
-                                                <span className={`badge ${statusConfig.class} inline-flex items-center gap-1`}>
+                                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${statusConfig.class}`}>
                                                     {statusConfig.icon}
                                                     {statusConfig.label}
                                                 </span>
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                <div className="flex items-center justify-center gap-2">
+                                                    <Link
+                                                        href={`/s-curve?project=${project.id}`}
+                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-500 hover:text-blue-600 transition-colors"
+                                                        title="S-Curve"
+                                                    >
+                                                        <BarChart3 className="w-4 h-4" />
+                                                    </Link>
+                                                    <Link
+                                                        href={`/gantt?projectId=${project.id}`}
+                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-500 hover:text-blue-600 transition-colors"
+                                                        title="Gantt Chart"
+                                                    >
+                                                        <GanttChartSquare className="w-4 h-4" />
+                                                    </Link>
+                                                </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center justify-center gap-1">
@@ -464,12 +552,14 @@ export default function ProjectsPage() {
                                                             <button
                                                                 onClick={() => openEditModal(project)}
                                                                 className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 transition-colors"
+                                                                title="แก้ไข"
                                                             >
                                                                 <Edit2 className="w-4 h-4" />
                                                             </button>
                                                             <button
                                                                 onClick={() => handleDeleteClick(project)}
                                                                 className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600 transition-colors"
+                                                                title="ลบ"
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
                                                             </button>

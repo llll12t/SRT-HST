@@ -30,6 +30,7 @@ export interface Task {
     actualEndDate?: string;
     actualDuration?: number;
     progress: number; // 0-100
+    progressUpdatedAt?: string; // Date when progress was last updated by user
     status: 'not-started' | 'in-progress' | 'completed' | 'delayed';
     parentTaskId?: string;
     order: number;
@@ -82,6 +83,9 @@ export interface SCurveDataPoint {
     actualProgress: number;
     cumulativePlanned: number;
     cumulativeActual: number;
+    bucketStart?: Date;
+    bucketEnd?: Date;
+    rawId?: string;
 }
 
 // Gantt Chart data

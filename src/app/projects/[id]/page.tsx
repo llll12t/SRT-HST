@@ -255,7 +255,7 @@ export default function ProjectDetailPage() {
             taskName: task.name,
             currentProgress: task.progress,
             newProgress: progress,
-            updateDate: new Date().toISOString().split('T')[0],
+            updateDate: task.progressUpdatedAt || new Date().toISOString().split('T')[0],
             reason: ''
         });
         setIsProgressModalOpen(true);
@@ -271,10 +271,22 @@ export default function ProjectDetailPage() {
             const task = tasks.find(t => t.id === progressUpdate.taskId);
             if (!task) return;
 
+            // Handle "เริ่มงาน" (-1) special case
+            const isStartingWork = progressUpdate.newProgress === -1;
+            const actualProgress = isStartingWork ? 0 : progressUpdate.newProgress;
+
+            // Determine status
+            let newStatus: Task['status'] = 'not-started';
+            if (actualProgress === 100) newStatus = 'completed';
+            else if (actualProgress > 0) newStatus = 'in-progress';
+            else if (isStartingWork) newStatus = 'in-progress'; // Explicit start
+            else if (actualProgress === 0 && task.status === 'in-progress') newStatus = 'in-progress'; // Maintain in-progress if already started
+
             // Prepare update data
             const updateData: Partial<Task> = {
-                progress: progressUpdate.newProgress,
-                status: progressUpdate.newProgress === 100 ? 'completed' : progressUpdate.newProgress > 0 ? 'in-progress' : 'not-started'
+                progress: actualProgress,
+                progressUpdatedAt: progressUpdate.updateDate,
+                status: newStatus
             };
 
             // Only set remarks if there's a value
@@ -282,18 +294,38 @@ export default function ProjectDetailPage() {
                 updateData.remarks = progressUpdate.reason;
             }
 
-            // Set actualStartDate if starting work
-            if (!task.actualStartDate && progressUpdate.newProgress > 0) {
+            // Handle actualStartDate
+            if (isStartingWork) {
+                // "เริ่มงาน" - set actualStartDate to selected date
                 updateData.actualStartDate = progressUpdate.updateDate;
+            } else if (actualProgress === 0) {
+                // Progress is 0%
+                if (newStatus === 'in-progress') {
+                    // If keeping in-progress, DON'T clear actualStartDate
+                    // If it was missing for some reason, we could possibly start it? 
+                    // But safer to just preserve existing or assume established.
+                    if (!task.actualStartDate) updateData.actualStartDate = progressUpdate.updateDate;
+                } else {
+                    // Not in-progress (reset to not-started) - clear actualStartDate
+                    updateData.actualStartDate = '';
+                }
+            } else if (actualProgress > 0) {
+                if (!task.actualStartDate) {
+                    // First time having progress - use plan start date as default
+                    updateData.actualStartDate = task.planStartDate;
+                } else if (progressUpdate.updateDate < task.actualStartDate) {
+                    // Update date is earlier than current actualStartDate - update it
+                    updateData.actualStartDate = progressUpdate.updateDate;
+                }
             }
 
             // Set actualEndDate if completing work
-            if (progressUpdate.newProgress === 100) {
+            if (actualProgress === 100) {
                 updateData.actualEndDate = progressUpdate.updateDate;
             }
 
-            // Clear actualEndDate if reopening task - use empty string instead of undefined
-            if (progressUpdate.newProgress < 100 && task.actualEndDate) {
+            // Clear actualEndDate if not complete
+            if (actualProgress < 100) {
                 updateData.actualEndDate = '';
             }
 
@@ -538,6 +570,11 @@ export default function ProjectDetailPage() {
                                                     style={{ width: `${task.progress}%` }}
                                                 />
                                             </div>
+                                            {task.progressUpdatedAt && (
+                                                <p className="text-[10px] text-gray-400 mt-1">
+                                                    อัพเดท: {new Date(task.progressUpdatedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                                </p>
+                                            )}
                                         </div>
 
                                         {/* Col 4: Actions */}
@@ -809,8 +846,8 @@ export default function ProjectDetailPage() {
                                 </div>
                                 <div className="text-2xl text-gray-300">→</div>
                                 <div className="text-center">
-                                    <p className={`text-2xl font-bold ${progressUpdate.newProgress === 100 ? 'text-green-600' : 'text-blue-600'}`}>
-                                        {progressUpdate.newProgress}%
+                                    <p className={`text-2xl font-bold ${progressUpdate.newProgress === 100 ? 'text-green-600' : progressUpdate.newProgress === -1 ? 'text-amber-500' : 'text-blue-600'}`}>
+                                        {progressUpdate.newProgress === -1 ? 'เริ่มงาน' : `${progressUpdate.newProgress}%`}
                                     </p>
                                     <p className="text-xs text-gray-500">ใหม่</p>
                                 </div>
@@ -819,8 +856,20 @@ export default function ProjectDetailPage() {
                             {/* Progress Selection Buttons */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">เลือก Progress</label>
-                                <div className="flex items-center justify-center gap-2">
-                                    {[0, 25, 50, 75, 100].map((val) => (
+                                <div className="flex items-center justify-center gap-2 flex-wrap">
+                                    {/* Start Work Button */}
+                                    <button
+                                        type="button"
+                                        onClick={() => setProgressUpdate({ ...progressUpdate, newProgress: -1 })}
+                                        className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${progressUpdate.newProgress === -1
+                                            ? 'bg-amber-500 text-white'
+                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        เริ่มงาน
+                                    </button>
+                                    {/* Progress Buttons */}
+                                    {[25, 50, 75, 100].map((val) => (
                                         <button
                                             key={val}
                                             type="button"
