@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-    Search,
     LogOut,
     Settings,
     ChevronDown
@@ -34,21 +33,9 @@ export default function Header() {
     };
 
     return (
-        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-6 sticky top-0 z-30">
-            {/* Search Bar */}
-            <div className="flex-1 max-w-md">
-                <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                        type="text"
-                        placeholder="ค้นหา..."
-                        className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 placeholder-gray-400 focus:bg-white focus:border-blue-500 transition-colors"
-                    />
-                </div>
-            </div>
-
+        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-end pl-16 lg:pl-6 pr-6 sticky top-0 z-30">
             {/* Right Actions */}
-            <div className="flex items-center gap-2 ml-4">
+            <div className="flex items-center gap-2">
                 {/* User Profile Dropdown */}
                 {user && (
                     <div className="relative">
