@@ -404,7 +404,7 @@ export default function TasksPage() {
         return (
             <div className="flex items-center justify-center py-20">
                 <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                <span className="ml-2 text-gray-500">กำลังโหลดข้อมูล...</span>
+                <span className="ml-2 text-gray-600">กำลังโหลดข้อมูล...</span>
             </div>
         );
     }
@@ -418,7 +418,7 @@ export default function TasksPage() {
                         <ListTodo className="w-6 h-6 text-blue-600" />
                         รายการงาน
                     </h1>
-                    <p className="text-gray-500 text-sm mt-0.5">จัดการและติดตามความคืบหน้างานทั้งหมด</p>
+                    <p className="text-gray-600 text-sm mt-0.5">จัดการและติดตามความคืบหน้างานทั้งหมด</p>
                 </div>
 
                 {['admin', 'project_manager'].includes(user?.role || '') && (
@@ -449,7 +449,7 @@ export default function TasksPage() {
                             : 'bg-white border-gray-200 hover:border-gray-300'
                             }`}
                     >
-                        <p className="text-gray-500 text-xs font-medium">{stat.label}</p>
+                        <p className="text-gray-600 text-xs font-medium">{stat.label}</p>
                         <p className={`text-xl font-semibold mt-0.5 ${stat.color || 'text-gray-900'}`}>{stat.value}</p>
                     </button>
                 ))}
@@ -458,7 +458,7 @@ export default function TasksPage() {
             {/* Filters */}
             <div className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col lg:flex-row gap-3">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                     <input
                         type="text"
                         placeholder="ค้นหาชื่องาน..."
@@ -507,7 +507,7 @@ export default function TasksPage() {
             {projects.length === 0 ? (
                 <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
                     <ListTodo className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 mb-4">กรุณาสร้างโครงการก่อน</p>
+                    <p className="text-gray-600 mb-4">กรุณาสร้างโครงการก่อน</p>
                     <Link
                         href="/projects"
                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 inline-block"
@@ -518,7 +518,7 @@ export default function TasksPage() {
             ) : filteredTasks.length === 0 ? (
                 <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
                     <ListTodo className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-500 mb-4">
+                    <p className="text-gray-600 mb-4">
                         {tasks.length === 0 ? 'ยังไม่มีงาน' : 'ไม่พบงานที่ค้นหา'}
                     </p>
                     {tasks.length === 0 && ['admin', 'project_manager'].includes(user?.role || '') && (
@@ -536,14 +536,14 @@ export default function TasksPage() {
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ชื่องาน</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">โครงการ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">วันที่ดำเนินการ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Cost</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Q'ty</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Progress</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">สถานะ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">ชื่องาน</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">โครงการ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">วันที่ดำเนินการ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Cost</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Q'ty</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Progress</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">สถานะ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -555,7 +555,7 @@ export default function TasksPage() {
                                         <td className="px-4 py-3">
                                             <div className="max-w-[280px]">
                                                 <p className="text-sm font-medium text-gray-900 truncate">{task.name}</p>
-                                                <p className="text-xs text-gray-400 mt-0.5">{task.category}</p>
+                                                <p className="text-xs text-gray-500 mt-0.5">{task.category}</p>
                                             </div>
                                         </td>
                                         <td className="px-4 py-3">
@@ -568,7 +568,7 @@ export default function TasksPage() {
                                         </td>
                                         <td className="px-4 py-3 text-center">
                                             <div className="flex flex-col text-xs">
-                                                <span className="text-gray-500">
+                                                <span className="text-gray-600">
                                                     แผน: {new Date(task.planStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {new Date(task.planEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                                                 </span>
                                                 {task.actualStartDate && (
@@ -579,10 +579,10 @@ export default function TasksPage() {
                                             </div>
                                         </td>
                                         <td className="px-4 py-3 text-center">
-                                            <span className="text-sm font-medium text-gray-600">{task.cost ? task.cost.toLocaleString() : '-'}</span>
+                                            <span className="text-sm font-medium text-gray-700">{task.cost ? task.cost.toLocaleString() : '-'}</span>
                                         </td>
                                         <td className="px-4 py-3 text-center">
-                                            <span className="text-sm text-gray-600">{task.quantity || '-'}</span>
+                                            <span className="text-sm text-gray-700">{task.quantity || '-'}</span>
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center gap-2 justify-center">
@@ -599,7 +599,7 @@ export default function TasksPage() {
                                                 <span className="text-sm font-medium text-gray-700">{task.progress}%</span>
                                             </div>
                                             {task.progressUpdatedAt && (
-                                                <p className="text-[10px] text-gray-400 mt-1 text-center">
+                                                <p className="text-xs text-gray-500 mt-1 text-center">
                                                     อัพเดท: {new Date(task.progressUpdatedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                                                 </p>
                                             )}
@@ -624,13 +624,13 @@ export default function TasksPage() {
                                                     <>
                                                         <button
                                                             onClick={() => openEditModal(task)}
-                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600"
+                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-blue-600"
                                                         >
                                                             <Edit2 className="w-4 h-4" />
                                                         </button>
                                                         <button
                                                             onClick={() => handleDelete(task.id)}
-                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600"
+                                                            className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-red-600"
                                                         >
                                                             <Trash2 className="w-4 h-4" />
                                                         </button>
@@ -650,14 +650,14 @@ export default function TasksPage() {
                                                                 <>
                                                                     <button
                                                                         onClick={() => handleMoveTask(task, 'up')}
-                                                                        className="p-0.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                                                                        className="p-0.5 hover:bg-gray-100 rounded text-gray-500 hover:text-blue-600 disabled:opacity-30"
                                                                         disabled={filteredTasks.indexOf(task) === 0 || reorderingId !== null}
                                                                     >
                                                                         <ArrowUp className="w-3 h-3" />
                                                                     </button>
                                                                     <button
                                                                         onClick={() => handleMoveTask(task, 'down')}
-                                                                        className="p-0.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 disabled:opacity-30"
+                                                                        className="p-0.5 hover:bg-gray-100 rounded text-gray-500 hover:text-blue-600 disabled:opacity-30"
                                                                         disabled={filteredTasks.indexOf(task) === filteredTasks.length - 1 || reorderingId !== null}
                                                                     >
                                                                         <ArrowDown className="w-3 h-3" />
@@ -676,7 +676,7 @@ export default function TasksPage() {
 
                     {/* Footer with Pagination */}
                     <div className="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200">
-                        <p className="text-sm text-gray-500">
+                        <p className="text-sm text-gray-600">
                             แสดง {paginatedTasks.length > 0 ? (currentPage - 1) * itemsPerPage + 1 : 0} ถึง {Math.min(currentPage * itemsPerPage, filteredTasks.length)} จาก {filteredTasks.length} รายการ
                         </p>
 

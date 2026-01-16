@@ -366,7 +366,7 @@ export default function ProjectDetailPage() {
         return (
             <div className="flex items-center justify-center py-20">
                 <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                <span className="ml-2 text-gray-500">กำลังโหลดข้อมูล...</span>
+                <span className="ml-2 text-gray-600">กำลังโหลดข้อมูล...</span>
             </div>
         );
     }
@@ -374,7 +374,7 @@ export default function ProjectDetailPage() {
     if (!project) {
         return (
             <div className="text-center py-20">
-                <p className="text-gray-500 mb-4">ไม่พบโครงการ</p>
+                <p className="text-gray-600 mb-4">ไม่พบโครงการ</p>
                 <Link href="/projects" className="text-blue-600 hover:text-blue-700">
                     ← กลับไปหน้าโครงการ
                 </Link>
@@ -401,7 +401,7 @@ export default function ProjectDetailPage() {
                                 {getStatusConfig(project.status).label}
                             </span>
                         </div>
-                        <p className="text-gray-500 text-sm mt-1">
+                        <p className="text-gray-600 text-sm mt-1">
                             {project.owner} • {project.startDate} → {project.endDate}
                         </p>
                     </div>
@@ -432,7 +432,7 @@ export default function ProjectDetailPage() {
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <Target className="w-4 h-4 text-blue-600" />
-                        <p className="text-gray-500 text-xs font-medium">Progress</p>
+                        <p className="text-gray-600 text-xs font-medium">Progress</p>
                     </div>
                     <p className="text-2xl font-semibold text-blue-600">{calculatedProgress.toFixed(2)}%</p>
                     <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
@@ -446,7 +446,7 @@ export default function ProjectDetailPage() {
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <ListTodo className="w-4 h-4 text-gray-600" />
-                        <p className="text-gray-500 text-xs font-medium">งานทั้งหมด</p>
+                        <p className="text-gray-600 text-xs font-medium">งานทั้งหมด</p>
                     </div>
                     <p className="text-2xl font-semibold text-gray-900">{stats.totalTasks}</p>
                 </div>
@@ -454,7 +454,7 @@ export default function ProjectDetailPage() {
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <CheckCircle2 className="w-4 h-4 text-green-600" />
-                        <p className="text-gray-500 text-xs font-medium">เสร็จสิ้น</p>
+                        <p className="text-gray-600 text-xs font-medium">เสร็จสิ้น</p>
                     </div>
                     <p className="text-2xl font-semibold text-green-600">{stats.completedTasks}</p>
                 </div>
@@ -462,7 +462,7 @@ export default function ProjectDetailPage() {
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <Clock className="w-4 h-4 text-amber-600" />
-                        <p className="text-gray-500 text-xs font-medium">กำลังดำเนินการ</p>
+                        <p className="text-gray-600 text-xs font-medium">กำลังดำเนินการ</p>
                     </div>
                     <p className="text-2xl font-semibold text-amber-600">{stats.inProgressTasks}</p>
                 </div>
@@ -470,7 +470,7 @@ export default function ProjectDetailPage() {
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
                     <div className="flex items-center gap-2 mb-2">
                         <AlertCircle className="w-4 h-4 text-gray-400" />
-                        <p className="text-gray-500 text-xs font-medium">ยังไม่เริ่ม</p>
+                        <p className="text-gray-600 text-xs font-medium">ยังไม่เริ่ม</p>
                     </div>
                     <p className="text-2xl font-semibold text-gray-600">{stats.notStartedTasks}</p>
                 </div>
@@ -489,14 +489,14 @@ export default function ProjectDetailPage() {
                 <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
                     <div>
                         <h2 className="font-semibold text-gray-900">รายการงาน</h2>
-                        <p className="text-gray-500 text-sm mt-0.5">จำนวน: {tasks.length} งาน</p>
+                        <p className="text-gray-600 text-sm mt-0.5">จำนวน: {tasks.length} งาน</p>
                     </div>
                 </div>
 
                 {tasks.length === 0 ? (
                     <div className="p-12 text-center">
                         <ListTodo className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-500 mb-4">ยังไม่มีรายการงาน</p>
+                        <p className="text-gray-600 mb-4">ยังไม่มีรายการงาน</p>
                         {['admin', 'project_manager'].includes(user?.role || '') && (
                             <button
                                 onClick={openCreateTaskModal}
@@ -513,7 +513,7 @@ export default function ProjectDetailPage() {
                                 {/* Category Header */}
                                 <div className="bg-gray-50 px-5 py-2">
                                     <span className="text-xs font-semibold text-gray-600 uppercase">{category}</span>
-                                    <span className="text-xs text-gray-400 ml-2">({categoryTasks.length} งาน)</span>
+                                    <span className="text-xs text-gray-500 ml-2">({categoryTasks.length} งาน)</span>
                                 </div>
 
                                 {/* Tasks */}
@@ -556,7 +556,7 @@ export default function ProjectDetailPage() {
                                         {/* Col 3: Progress */}
                                         <div className="col-span-2">
                                             <div className="flex items-center justify-between text-xs mb-1">
-                                                <span className="text-gray-500">Progress</span>
+                                                <span className="text-gray-600">Progress</span>
                                                 <span className={`font-medium ${task.progress === 100 ? 'text-green-600' : 'text-gray-700'
                                                     }`}>{task.progress}%</span>
                                             </div>
@@ -571,7 +571,7 @@ export default function ProjectDetailPage() {
                                                 />
                                             </div>
                                             {task.progressUpdatedAt && (
-                                                <p className="text-[10px] text-gray-400 mt-1">
+                                                <p className="text-xs text-gray-500 mt-1">
                                                     อัพเดท: {new Date(task.progressUpdatedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
                                                 </p>
                                             )}

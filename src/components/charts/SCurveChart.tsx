@@ -70,7 +70,7 @@ export default function SCurveChart({ data, currentProgress = 0, title = "S-Curv
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-6 gap-4">
                 <div>
                     <h3 className="text-lg font-semibold text-gray-900">{title}</h3>
-                    <p className="text-gray-500 text-sm mt-0.5">แผนงานเทียบกับผลงานจริงสะสม (Cumulative)</p>
+                    <p className="text-gray-600 text-sm mt-0.5">แผนงานเทียบกับผลงานจริงสะสม (Cumulative)</p>
                 </div>
                 {/* Custom Legend */}
                 <div className="flex items-center gap-6 text-sm bg-gray-50 px-4 py-2 rounded-lg">
@@ -105,7 +105,7 @@ export default function SCurveChart({ data, currentProgress = 0, title = "S-Curv
                         <XAxis
                             dataKey="date"
                             stroke="#9ca3af"
-                            tick={{ fill: '#6b7280', fontSize: 11 }}
+                            tick={{ fill: '#4b5563', fontSize: 11 }}
                             tickLine={false}
                             axisLine={{ stroke: '#e5e7eb' }}
                             interval="preserveStartEnd"
@@ -114,7 +114,7 @@ export default function SCurveChart({ data, currentProgress = 0, title = "S-Curv
 
                         <YAxis
                             stroke="#9ca3af"
-                            tick={{ fill: '#6b7280', fontSize: 11 }}
+                            tick={{ fill: '#4b5563', fontSize: 11 }}
                             tickLine={false}
                             axisLine={{ stroke: '#e5e7eb' }}
                             domain={[0, 100]}
@@ -171,7 +171,7 @@ export default function SCurveChart({ data, currentProgress = 0, title = "S-Curv
                 </ResponsiveContainer>
             </div>
 
-            <div className="mt-4 text-center text-xs text-gray-400">
+            <div className="mt-4 text-center text-xs text-gray-500">
                 * กราฟ Actual แสดงเฉพาะข้อมูลที่มีการบันทึกหรือถึงปัจจุบัน
             </div>
         </div>

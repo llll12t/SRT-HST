@@ -223,7 +223,7 @@ export default function DashboardPage() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-        <p className="text-gray-500">กำลังประมวลผลข้อมูลโครงการ...</p>
+        <p className="text-gray-600">กำลังประมวลผลข้อมูลโครงการ...</p>
       </div>
     );
   }
@@ -235,7 +235,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">ภาพรวมโครงการ (Portfolio Dashboard)</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <p className="text-gray-600 text-sm mt-1">
             สถานะความคืบหน้าของทุกโครงการ ณ วันที่ {format(new Date(), 'd MMMM yyyy', { locale: th })}
           </p>
         </div>
@@ -255,7 +255,7 @@ export default function DashboardPage() {
             bg-white border-gray-200 hover:border-blue-300`}
         >
           <div>
-            <p className="text-sm font-medium text-gray-500">โครงการทั้งหมด</p>
+            <p className="text-sm font-medium text-gray-600">โครงการทั้งหมด</p>
             <p className="text-3xl font-bold text-gray-900 mt-1">{globalStats.total}</p>
           </div>
           <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-600">
@@ -267,7 +267,7 @@ export default function DashboardPage() {
           className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between cursor-default"
         >
           <div>
-            <p className="text-sm font-medium text-gray-500">กำลังดำเนินการ (ตามแผน)</p>
+            <p className="text-sm font-medium text-gray-600">กำลังดำเนินการ (ตามแผน)</p>
             <p className="text-3xl font-bold text-green-600 mt-1">{globalStats.onTrack}</p>
           </div>
           <div className="w-10 h-10 bg-green-50 rounded-lg flex items-center justify-center text-green-600">
@@ -279,7 +279,7 @@ export default function DashboardPage() {
           className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between cursor-default"
         >
           <div>
-            <p className="text-sm font-medium text-gray-500">ล่าช้ากว่ากำหนด</p>
+            <p className="text-sm font-medium text-gray-600">ล่าช้ากว่ากำหนด</p>
             <p className="text-3xl font-bold text-red-600 mt-1">{globalStats.delayed}</p>
           </div>
           <div className="w-10 h-10 bg-red-50 rounded-lg flex items-center justify-center text-red-600">
@@ -289,7 +289,7 @@ export default function DashboardPage() {
 
         <div className="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex items-center justify-between cursor-default">
           <div>
-            <p className="text-sm font-medium text-gray-500">งานวิกฤต (Critical)</p>
+            <p className="text-sm font-medium text-gray-600">งานวิกฤต (Critical)</p>
             <p className="text-3xl font-bold text-amber-600 mt-1">{criticalTasks.length}</p>
           </div>
           <div className="w-10 h-10 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600">
@@ -304,7 +304,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-2 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-gray-500" />
+              <Building2 className="w-5 h-5 text-gray-600" />
               สถานะรายโครงการ
             </h2>
 
@@ -312,7 +312,7 @@ export default function DashboardPage() {
             <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-4 w-4 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
+                  <svg className="h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
                 </div>
                 <input
                   type="text"
@@ -341,7 +341,7 @@ export default function DashboardPage() {
 
           {filteredProjects.length === 0 ? (
             <div className="text-center py-10 bg-gray-50 rounded-xl border border-dashed border-gray-300">
-              <p className="text-gray-500">ไม่พบโครงการในหมวดหมู่นี้</p>
+              <p className="text-gray-600">ไม่พบโครงการในหมวดหมู่นี้</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -374,7 +374,7 @@ export default function DashboardPage() {
                           {isCompleted && <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-full border border-green-200 font-medium">เสร็จสิ้น</span>}
                           {isOnHold && <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded-full border border-amber-200 font-medium">ระงับชั่วคราว</span>}
                         </div>
-                        <p className="text-xs text-gray-500 flex items-center gap-1.5">
+                        <p className="text-xs text-gray-600 flex items-center gap-1.5">
                           <CalendarDays className="w-3 h-3" />
                           {format(parseDate(project.startDate), 'd MMM yy', { locale: th })} - {format(parseDate(project.endDate), 'd MMM yy', { locale: th })}
                         </p>
@@ -403,9 +403,9 @@ export default function DashboardPage() {
                     {/* Progress Bars - Compact */}
                     <div className="space-y-2 mb-3 relative z-10">
                       <div>
-                        <div className="flex justify-between text-[11px] mb-0.5">
-                          <span className="text-gray-500">Plan (แผนงาน)</span>
-                          <span className="font-semibold text-gray-700">
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-gray-600">Plan (แผนงาน)</span>
+                          <span className="font-semibold text-gray-800">
                             {isCompleted ? '100.00' : project.stats.planned.toFixed(2)}%
                           </span>
                         </div>
@@ -417,8 +417,8 @@ export default function DashboardPage() {
                         </div>
                       </div>
                       <div>
-                        <div className="flex justify-between text-[11px] mb-0.5">
-                          <span className="text-gray-500">Actual (ผลงาน)</span>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-gray-600">Actual (ผลงาน)</span>
                           <span className={`font-semibold ${project.stats.status === 'delayed' && !isCompleted ? 'text-red-600' : 'text-green-600'}`}>
                             {isCompleted ? '100.00' : project.stats.actual.toFixed(2)}%
                           </span>
@@ -434,14 +434,14 @@ export default function DashboardPage() {
 
                     {/* Footer Actions - Compact */}
                     <div className="flex items-center justify-between pt-3 border-t border-gray-100 relative z-10">
-                      <div className="text-[11px] text-gray-400">
+                      <div className="text-xs text-gray-500">
                         {project.stats.completedTasks} / {project.stats.totalTasks} tasks
                       </div>
                       <div className="flex items-center gap-2">
-                        <Link href={`/s-curve?project=${project.id}`} className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 transition-colors px-1.5 py-1 hover:bg-gray-50 rounded">
+                        <Link href={`/s-curve?project=${project.id}`} className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors px-1.5 py-1 hover:bg-gray-50 rounded">
                           <BarChart3 className="w-3.5 h-3.5" /> S-Curve
                         </Link>
-                        <Link href={`/gantt?projectId=${project.id}`} className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 transition-colors px-1.5 py-1 hover:bg-gray-50 rounded">
+                        <Link href={`/gantt?projectId=${project.id}`} className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors px-1.5 py-1 hover:bg-gray-50 rounded">
                           <GanttChartSquare className="w-3.5 h-3.5" /> Gantt
                         </Link>
                         <Link href={`/projects/${project.id}`} className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-0.5 transition-colors ml-1">
@@ -468,7 +468,7 @@ export default function DashboardPage() {
             {criticalTasks.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <CheckCircle2 className="w-10 h-10 text-green-100 mb-2" />
-                <p className="text-sm text-gray-500">ยอดเยี่ยม! ไม่มีงานล่าช้า</p>
+                <p className="text-sm text-gray-600">ยอดเยี่ยม! ไม่มีงานล่าช้า</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -480,10 +480,10 @@ export default function DashboardPage() {
                         <span className="text-xs font-semibold text-red-600 px-1.5 py-0.5 bg-white rounded border border-red-200">
                           {task.delayLabel}
                         </span>
-                        <span className="text-xs text-red-400">{project?.name.substring(0, 15)}...</span>
+                        <span className="text-xs text-red-500">{project?.name.substring(0, 15)}...</span>
                       </div>
                       <p className="text-sm font-medium text-gray-900 line-clamp-2 mb-1">{task.name}</p>
-                      <div className="flex items-center justify-between text-xs text-gray-500">
+                      <div className="flex items-center justify-between text-xs text-gray-600">
                         <span>กำหนดส่ง: {format(parseDate(task.planEndDate), 'd MMM')}</span>
                         <span>คืบหน้า: {task.progress}%</span>
                       </div>
@@ -494,7 +494,7 @@ export default function DashboardPage() {
             )}
 
             {criticalTasks.length > 0 && (
-              <Link href="/tasks" className="block text-center text-sm text-gray-500 hover:text-gray-900 mt-4 pt-4 border-t border-gray-100">
+              <Link href="/tasks" className="block text-center text-sm text-gray-600 hover:text-gray-900 mt-4 pt-4 border-t border-gray-100">
                 ดูงานทั้งหมด
               </Link>
             )}

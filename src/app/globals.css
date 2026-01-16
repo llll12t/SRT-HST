@@ -5,11 +5,14 @@
   --foreground: #1e293b;
   --card-bg: #ffffff;
   --border: #e2e8f0;
-  --muted: #64748b;
+  --muted: #475569; /* Improved contrast: gray-600 instead of gray-500 */
+  --muted-foreground: #64748b;
   --primary: #2563eb;
   --success: #16a34a;
   --warning: #d97706;
   --danger: #dc2626;
+  --text-muted-sharp: #475569; /* Sharp muted text */
+  --text-secondary: #64748b; /* Secondary text */
 }
 
 * {

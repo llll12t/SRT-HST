@@ -395,7 +395,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                     </div>
                     <div>
                         <h3 className="font-semibold text-gray-900">{title || 'Project Schedule'}</h3>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-gray-600">
                             {format(timeRange.start, 'MMM yyyy', { locale: th })} - {format(timeRange.end, 'MMM yyyy', { locale: th })}
                         </p>
                     </div>
@@ -406,7 +406,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                     <div className="flex items-center gap-2">
                         <Wallet className="w-4 h-4 text-blue-600" />
                         <div>
-                            <p className="text-[10px] text-gray-500 uppercase">Total Budget</p>
+                            <p className="text-xs text-gray-600 uppercase">Total Budget</p>
                             <p className="text-sm font-bold text-blue-700">{budgetStats.totalCost.toLocaleString()} <span className="text-xs font-normal">บาท</span></p>
                         </div>
                     </div>
@@ -414,7 +414,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                     <div className="flex items-center gap-2">
                         <TrendingUp className="w-4 h-4 text-green-600" />
                         <div>
-                            <p className="text-[10px] text-gray-500 uppercase">Total Actual</p>
+                            <p className="text-xs text-gray-600 uppercase">Total Actual</p>
                             <p className="text-sm font-bold text-green-700">{progressStats.totalActual.toFixed(2)}%</p>
                         </div>
                     </div>
@@ -466,16 +466,16 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                             {/* Sticky Left Corner */}
                             <div className="sticky left-0 z-40 bg-gray-50 border-r border-gray-200 flex items-end pb-2 px-4 shadow-[4px_0_10px_rgba(0,0,0,0.03)] h-16"
                                 style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
-                                <div className="flex-1 text-xs font-semibold text-gray-500 uppercase">Task Name</div>
+                                <div className="flex-1 text-xs font-semibold text-gray-600 uppercase">Task Name</div>
                                 {showDates && (
                                     <>
-                                        <div className="w-20 text-right text-xs font-semibold text-gray-500 uppercase">Cost</div>
+                                        <div className="w-20 text-right text-xs font-semibold text-gray-600 uppercase">Cost</div>
                                         <div className="w-14 text-right text-xs font-semibold text-blue-600 uppercase">Weight</div>
-                                        <div className="w-16 text-right text-xs font-semibold text-gray-500 uppercase">Q'ty</div>
-                                        <div className="w-24 text-right text-xs font-semibold text-gray-500 uppercase">Period</div>
+                                        <div className="w-16 text-right text-xs font-semibold text-gray-600 uppercase">Q'ty</div>
+                                        <div className="w-24 text-right text-xs font-semibold text-gray-600 uppercase">Period</div>
                                     </>
                                 )}
-                                <div className="w-12 text-right text-xs font-semibold text-gray-500 uppercase">%Prog</div>
+                                <div className="w-12 text-right text-xs font-semibold text-gray-600 uppercase">%Prog</div>
                             </div>
 
                             {/* Timeline Headers */}
@@ -496,7 +496,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                                         }
 
                                         return (
-                                            <div key={idx} className="flex items-center justify-center px-1 text-[10px] font-bold text-gray-600 bg-gray-50/50 border-r border-gray-100 truncate"
+                                            <div key={idx} className="flex items-center justify-center px-1 text-xs font-bold text-gray-700 bg-gray-50/50 border-r border-gray-100 truncate"
                                                 style={{ width: `${width}px`, minWidth: `${width}px` }}>
                                                 {format(group, timeline.groupFormat, { locale: th })}
                                             </div>
@@ -514,7 +514,7 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                                         else label = format(item, 'MMM', { locale: th });
 
                                         return (
-                                            <div key={idx} className={`flex-shrink-0 border-r border-gray-50 flex items-center justify-center text-[10px] ${isTodayDay ? 'bg-blue-600 text-white font-bold' : isWeekendDay ? 'bg-gray-50 text-gray-400' : 'text-gray-500'
+                                            <div key={idx} className={`flex-shrink-0 border-r border-gray-50 flex items-center justify-center text-xs ${isTodayDay ? 'bg-blue-600 text-white font-bold' : isWeekendDay ? 'bg-gray-50 text-gray-500' : 'text-gray-600'
                                                 }`} style={{ width: config.cellWidth }}>
                                                 {label}
                                             </div>
@@ -537,11 +537,11 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                                         <div className="flex items-center gap-3 text-[10px]">
                                             <div className="flex items-center gap-1">
                                                 <div className="w-3 h-0.5 bg-blue-500"></div>
-                                                <span className="text-gray-500">Plan</span>
+                                                <span className="text-gray-600">Plan</span>
                                             </div>
                                             <div className="flex items-center gap-1">
                                                 <div className="w-3 h-0.5 bg-green-500"></div>
-                                                <span className="text-gray-500">Actual</span>
+                                                <span className="text-gray-600">Actual</span>
                                             </div>
                                         </div>
                                     </div>
@@ -566,8 +566,8 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                                         />
                                     </svg>
                                     {/* Y-axis labels */}
-                                    <div className="absolute left-2 top-1 text-[8px] text-gray-400">100%</div>
-                                    <div className="absolute left-2 bottom-1 text-[8px] text-gray-400">0%</div>
+                                    <div className="absolute left-2 top-1 text-xs text-gray-500">100%</div>
+                                    <div className="absolute left-2 bottom-1 text-xs text-gray-500">0%</div>
                                 </div>
                             </div>
                         )}
@@ -591,20 +591,20 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
                                                     {isCollapsed ? <ChevronRight className="w-4 h-4 text-blue-600" /> : <ChevronDown className="w-4 h-4 text-blue-600" />}
                                                 </button>
                                                 <span className="flex-1 text-xs font-bold text-blue-800 uppercase">{category}</span>
-                                                <span className="text-[10px] text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">{categorySummary.count} งาน</span>
+                                                <span className="text-xs text-blue-600 bg-blue-100 px-1.5 py-0.5 rounded">{categorySummary.count} งาน</span>
                                                 {showDates && (
                                                     <>
-                                                        <span className="w-20 text-right text-[10px] font-semibold text-blue-700">
+                                                        <span className="w-20 text-right text-xs font-semibold text-blue-700">
                                                             {categorySummary.totalCost.toLocaleString()}
                                                         </span>
-                                                        <span className="w-14 text-right text-[10px] font-bold text-blue-600">
+                                                        <span className="w-14 text-right text-xs font-bold text-blue-600">
                                                             {categorySummary.totalWeight.toFixed(1)}%
                                                         </span>
                                                         <span className="w-16"></span>
                                                         <span className="w-24"></span>
                                                     </>
                                                 )}
-                                                <span className="w-12 text-right text-[10px] font-bold text-blue-700">
+                                                <span className="w-12 text-right text-xs font-bold text-blue-700">
                                                     {categorySummary.avgProgress.toFixed(0)}%
                                                 </span>
                                             </div>
@@ -626,21 +626,21 @@ export default function GanttChart({ tasks, startDate = '2024-09-01', endDate = 
 
                                                         {showDates && (
                                                             <>
-                                                                <div className="w-20 text-right text-[10px] text-gray-500 font-medium">
+                                                                <div className="w-20 text-right text-xs text-gray-600 font-medium">
                                                                     {task.cost ? task.cost.toLocaleString() : '-'}
                                                                 </div>
-                                                                <div className="w-14 text-right text-[10px] text-blue-600 font-semibold">
+                                                                <div className="w-14 text-right text-xs text-blue-600 font-semibold">
                                                                     {weight.toFixed(2)}%
                                                                 </div>
-                                                                <div className="w-16 text-right text-[10px] text-gray-500 font-medium">
+                                                                <div className="w-16 text-right text-xs text-gray-600 font-medium">
                                                                     {task.quantity || '-'}
                                                                 </div>
-                                                                <div className="w-24 text-right text-[9px] text-gray-400">
+                                                                <div className="w-24 text-right text-xs text-gray-500">
                                                                     {format(parseISO(task.planStartDate), 'd/MM')} - {format(parseISO(task.planEndDate), 'd/MM')}
                                                                 </div>
                                                             </>
                                                         )}
-                                                        <div className={`w-12 text-right text-[10px] font-bold ${Number(task.progress) === 100 ? 'text-green-600' : Number(task.progress) > 0 ? 'text-blue-600' : 'text-gray-300'}`}>
+                                                        <div className={`w-12 text-right text-xs font-bold ${Number(task.progress) === 100 ? 'text-green-600' : Number(task.progress) > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
                                                             {Number(task.progress)}%
                                                         </div>
                                                     </div>

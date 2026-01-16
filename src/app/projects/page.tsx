@@ -220,7 +220,7 @@ export default function ProjectsPage() {
                         <FolderKanban className="w-6 h-6 text-blue-600" />
                         โครงการทั้งหมด
                     </h1>
-                    <p className="text-gray-500 text-sm mt-0.5">จัดการและติดตามโครงการก่อสร้าง</p>
+                    <p className="text-gray-600 text-sm mt-0.5">จัดการและติดตามโครงการก่อสร้าง</p>
                 </div>
 
                 {['admin', 'project_manager'].includes(user?.role || '') && (
@@ -237,19 +237,19 @@ export default function ProjectsPage() {
             {/* Quick Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                    <p className="text-gray-500 text-xs font-medium">โครงการทั้งหมด</p>
+                    <p className="text-gray-600 text-xs font-medium">โครงการทั้งหมด</p>
                     <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.total}</p>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                    <p className="text-gray-500 text-xs font-medium">กำลังดำเนินการ</p>
+                    <p className="text-gray-600 text-xs font-medium">กำลังดำเนินการ</p>
                     <p className="text-2xl font-semibold text-blue-600 mt-1">{stats.inProgress}</p>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                    <p className="text-gray-500 text-xs font-medium">เสร็จสิ้น</p>
+                    <p className="text-gray-600 text-xs font-medium">เสร็จสิ้น</p>
                     <p className="text-2xl font-semibold text-green-600 mt-1">{stats.completed}</p>
                 </div>
                 <div className="bg-white rounded-lg border border-gray-200 p-4">
-                    <p className="text-gray-500 text-xs font-medium">วางแผน</p>
+                    <p className="text-gray-600 text-xs font-medium">วางแผน</p>
                     <p className="text-2xl font-semibold text-gray-600 mt-1">{stats.planning}</p>
                 </div>
             </div>
@@ -257,7 +257,7 @@ export default function ProjectsPage() {
             {/* Filters */}
             <div className="bg-white rounded-lg border border-gray-200 p-4 flex flex-col lg:flex-row gap-3">
                 <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                     <input
                         type="text"
                         placeholder="ค้นหาโครงการ..."
@@ -302,13 +302,13 @@ export default function ProjectsPage() {
                 loading ? (
                     <div className="flex items-center justify-center py-12">
                         <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-                        <span className="ml-2 text-gray-500">กำลังโหลดข้อมูล...</span>
+                        <span className="ml-2 text-gray-600">กำลังโหลดข้อมูล...</span>
                     </div>
                 ) : filteredProjects.length === 0 ? (
                     /* Empty State */
                     <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
                         <FolderKanban className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-500 mb-4">
+                        <p className="text-gray-600 mb-4">
                             {projects.length === 0 ? 'ยังไม่มีโครงการ' : 'ไม่พบโครงการที่ค้นหา'}
                         </p>
                         {projects.length === 0 && ['admin', 'project_manager'].includes(user?.role || '') && (
@@ -358,7 +358,7 @@ export default function ProjectsPage() {
                                                 <h3 className={`font-medium ${isCompleted ? 'text-green-900' : 'text-gray-900'}`}>
                                                     {project.name}
                                                 </h3>
-                                                <p className="text-xs text-gray-400">{project.owner}</p>
+                                                <p className="text-xs text-gray-500">{project.owner}</p>
                                             </div>
                                         </div>
                                         <div className="relative">
@@ -395,13 +395,13 @@ export default function ProjectsPage() {
 
                                     {/* Description */}
                                     {project.description && (
-                                        <p className="text-sm text-gray-500 mb-3 line-clamp-2">{project.description}</p>
+                                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">{project.description}</p>
                                     )}
 
                                     {/* Progress */}
                                     <div className="mb-4">
                                         <div className="flex items-center justify-between text-sm mb-1.5">
-                                            <span className="text-gray-500">Progress</span>
+                                            <span className="text-gray-600">Progress</span>
                                             <span className={`font-medium ${project.overallProgress === 100 ? 'text-green-600' :
                                                 project.overallProgress >= 50 ? 'text-blue-600' :
                                                     'text-gray-700'
@@ -422,7 +422,7 @@ export default function ProjectsPage() {
                                     </div>
 
                                     {/* Meta Info */}
-                                    <div className="flex items-center gap-3 text-sm text-gray-500 mb-4">
+                                    <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
                                         <div className="flex items-center gap-1.5">
                                             <Calendar className="w-3.5 h-3.5" />
                                             <span>{project.startDate}</span>
@@ -442,7 +442,7 @@ export default function ProjectsPage() {
                                         <div className="flex items-center gap-3">
                                             <Link
                                                 href={`/s-curve?project=${project.id}`}
-                                                className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                                                className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors"
                                                 title="S-Curve"
                                             >
                                                 <BarChart3 className="w-3.5 h-3.5" />
@@ -450,7 +450,7 @@ export default function ProjectsPage() {
                                             </Link>
                                             <Link
                                                 href={`/gantt?projectId=${project.id}`}
-                                                className="text-xs text-gray-500 hover:text-blue-600 flex items-center gap-1 transition-colors"
+                                                className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors"
                                                 title="Gantt Chart"
                                             >
                                                 <GanttChartSquare className="w-3.5 h-3.5" />
@@ -474,12 +474,12 @@ export default function ProjectsPage() {
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">โครงการ</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">เจ้าของ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">Progress</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">สถานะ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">เครื่องมือ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase">จัดการ</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">โครงการ</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">เจ้าของ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Progress</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">สถานะ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">เครื่องมือ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">จัดการ</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -503,10 +503,10 @@ export default function ProjectsPage() {
                                                     <p className={`text-sm font-medium transition-colors ${isCompleted ? 'text-green-900' : 'text-gray-900 group-hover:text-blue-600'}`}>
                                                         {project.name}
                                                     </p>
-                                                    <p className="text-xs text-gray-400">{project.startDate} → {project.endDate}</p>
+                                                    <p className="text-xs text-gray-500">{project.startDate} → {project.endDate}</p>
                                                 </Link>
                                             </td>
-                                            <td className="px-4 py-3 text-sm text-gray-600">{project.owner}</td>
+                                            <td className="px-4 py-3 text-sm text-gray-700">{project.owner}</td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center gap-2 justify-center">
                                                     <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
@@ -531,14 +531,14 @@ export default function ProjectsPage() {
                                                 <div className="flex items-center justify-center gap-2">
                                                     <Link
                                                         href={`/s-curve?project=${project.id}`}
-                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-500 hover:text-blue-600 transition-colors"
+                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-600 hover:text-blue-600 transition-colors"
                                                         title="S-Curve"
                                                     >
                                                         <BarChart3 className="w-4 h-4" />
                                                     </Link>
                                                     <Link
                                                         href={`/gantt?projectId=${project.id}`}
-                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-500 hover:text-blue-600 transition-colors"
+                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-600 hover:text-blue-600 transition-colors"
                                                         title="Gantt Chart"
                                                     >
                                                         <GanttChartSquare className="w-4 h-4" />
@@ -551,14 +551,14 @@ export default function ProjectsPage() {
                                                         <>
                                                             <button
                                                                 onClick={() => openEditModal(project)}
-                                                                className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-blue-600 transition-colors"
+                                                                className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-blue-600 transition-colors"
                                                                 title="แก้ไข"
                                                             >
                                                                 <Edit2 className="w-4 h-4" />
                                                             </button>
                                                             <button
                                                                 onClick={() => handleDeleteClick(project)}
-                                                                className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-red-600 transition-colors"
+                                                                className="p-1.5 hover:bg-gray-100 rounded text-gray-500 hover:text-red-600 transition-colors"
                                                                 title="ลบ"
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
