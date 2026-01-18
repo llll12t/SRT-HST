@@ -17,9 +17,11 @@ export interface Task {
     id: string;
     projectId: string;
     category: string;
+    type?: 'task' | 'group';
     name: string;
     description?: string;
     responsible?: string;
+    color?: string; // Custom color for the task/group bar
     // weight removed
     cost?: number; // Cost in Baht
     quantity?: string; // Q'ty with unit (e.g. "20 m.")
@@ -34,6 +36,7 @@ export interface Task {
     status: 'not-started' | 'in-progress' | 'completed' | 'delayed';
     parentTaskId?: string | null;
     order: number;
+    predecessors?: string[];
     remarks?: string;
     createdAt: string;
     updatedAt: string;

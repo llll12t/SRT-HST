@@ -24,7 +24,10 @@ import {
     Plus,
     X,
     UserPlus,
-    Edit2
+    Edit2,
+    Info,
+    AlertTriangle,
+    CheckCircle2
 } from 'lucide-react';
 import { getProjects, getAllTasks, seedSampleData, addProject, addTask, clearAllData, getMembers, createMember, updateMember, deleteMember } from '@/lib/firestore';
 import { Task, Project, Member } from '@/types/construction';
@@ -103,6 +106,21 @@ export default function SettingsPage() {
     const [seeding, setSeeding] = useState(false);
     const [importing, setImporting] = useState(false);
     const [clearing, setClearing] = useState(false);
+
+    // Alert Dialog State
+    const [alertDialog, setAlertDialog] = useState<{
+        isOpen: boolean;
+        title: string;
+        message: string;
+        type: 'info' | 'success' | 'warning' | 'error' | 'confirm';
+        onConfirm?: () => void;
+        onCancel?: () => void;
+    }>({
+        isOpen: false,
+        title: '',
+        message: '',
+        type: 'info'
+    });
 
     // Members state
     const [members, setMembers] = useState<Member[]>([]);
@@ -198,7 +216,13 @@ export default function SettingsPage() {
             setTimeout(() => setSaved(false), 2000);
         } catch (error) {
             console.error('Error saving settings:', error);
-            alert('เกิดข้อผิดพลาดในการบันทึก');
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'เกิดข้อผิดพลาดในการบันทึก',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
         } finally {
             setSaving(false);
         }
@@ -221,18 +245,39 @@ export default function SettingsPage() {
     };
 
     const handleSeedData = async () => {
-        if (!confirm('ต้องการเพิ่มข้อมูลตัวอย่างหรือไม่? (จะไม่เพิ่มซ้ำถ้ามีข้อมูลอยู่แล้ว)')) return;
-        setSeeding(true);
-        try {
-            await seedSampleData();
-            await fetchStats();
-            alert('เพิ่มข้อมูลตัวอย่างเรียบร้อย');
-        } catch (error) {
-            console.error('Error seeding data:', error);
-            alert('เกิดข้อผิดพลาด');
-        } finally {
-            setSeeding(false);
-        }
+        setAlertDialog({
+            isOpen: true,
+            title: 'ยืนยัน',
+            message: 'ต้องการเพิ่มข้อมูลตัวอย่างหรือไม่? (จะไม่เพิ่มซ้ำถ้ามีข้อมูลอยู่แล้ว)',
+            type: 'confirm',
+            onConfirm: async () => {
+                setAlertDialog(prev => ({ ...prev, isOpen: false }));
+                setSeeding(true);
+                try {
+                    await seedSampleData();
+                    await fetchStats();
+                    setAlertDialog({
+                        isOpen: true,
+                        title: 'สำเร็จ',
+                        message: 'เพิ่มข้อมูลตัวอย่างเรียบร้อย',
+                        type: 'success',
+                        onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+                } catch (error) {
+                    console.error('Error seeding data:', error);
+                    setAlertDialog({
+                        isOpen: true,
+                        title: 'ข้อผิดพลาด',
+                        message: 'เกิดข้อผิดพลาด',
+                        type: 'error',
+                        onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+                } finally {
+                    setSeeding(false);
+                }
+            },
+            onCancel: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+        });
     };
 
     const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -240,149 +285,208 @@ export default function SettingsPage() {
         if (!file) return;
 
         if (!file.name.toLowerCase().endsWith('.csv')) {
-            alert('กรุณาเลือกไฟล์ CSV เท่านั้น');
-            e.target.value = '';
-            return;
-        }
-
-        if (!confirm(`ต้องการนำเข้าข้อมูลจากไฟล์ "${file.name}" หรือไม่?\nข้อมูลจะถูกเพิ่มเป็นโครงการใหม่`)) {
-            e.target.value = '';
-            return;
-        }
-
-        setImporting(true);
-
-        try {
-            // Read CSV file
-            const text = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = (e) => resolve(e.target?.result as string);
-                reader.onerror = reject;
-                reader.readAsText(file, 'UTF-8');
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'กรุณาเลือกไฟล์ CSV เท่านั้น',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
             });
-
-            // Parse CSV
-            const lines = text.split(/\r?\n/).filter(line => line.trim());
-            if (lines.length < 2) {
-                throw new Error('CSV file is empty or has no data rows');
-            }
-
-            // Parse headers (first line)
-            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
-
-            // Parse data rows
-            const data: any[] = [];
-            for (let i = 1; i < lines.length; i++) {
-                const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-                const row: any = {};
-                headers.forEach((header, idx) => {
-                    row[header] = values[idx] || '';
-                });
-                data.push(row);
-            }
-
-            // Create a new Project
-            const newProject: Omit<Project, 'id' | 'createdAt' | 'updatedAt'> = {
-                name: file.name.replace(/\.csv$/i, ''),
-                owner: settings.profile.name,
-                startDate: new Date().toISOString().split('T')[0],
-                endDate: new Date().toISOString().split('T')[0],
-                status: 'in-progress',
-                overallProgress: 0,
-                description: `Imported from ${file.name}`
-            };
-
-            const projectId = await addProject(newProject);
-
-            let taskCount = 0;
-            let minDate = new Date(8640000000000000);
-            let maxDate = new Date(-8640000000000000);
-
-            for (const row of data) {
-                // Support various column names
-                const taskName = row['Task'] || row['name'] || row['Name'] || row['title'] || row['Title'];
-
-                if (!taskName || taskName === '(Day)' || taskName === '(Baht)') continue;
-
-                const category = row['Category'] || row['category'] || row['No.'] ? `Group ${row['No.']}` : 'Imported Tasks';
-
-                // Date Parsing
-                const parseDate = (val: any) => {
-                    if (!val) return null;
-                    const d = new Date(val);
-                    return isNaN(d.getTime()) ? null : d;
-                };
-
-                let start = parseDate(row['Start'] || row['planStartDate'] || row['StartDate']) || new Date();
-                let end = parseDate(row['End'] || row['planEndDate'] || row['EndDate']) || new Date();
-
-                if (start < minDate) minDate = start;
-                if (end > maxDate) maxDate = end;
-
-                // Duration
-                let duration = 0;
-                if (row['Duration'] || row['planDuration']) {
-                    duration = Number(row['Duration'] || row['planDuration']) || 0;
-                } else {
-                    const diffTime = Math.abs(end.getTime() - start.getTime());
-                    duration = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
-                }
-
-                const progress = Number(row['Progress'] || row['progress']) || 0;
-
-                // Cost & Quantity
-                let cost = 0;
-                const rawCost = row['Cost'] || row['cost'] || row['Cost (Baht)'];
-                if (rawCost && rawCost !== '-') {
-                    cost = parseFloat(String(rawCost).replace(/,/g, '')) || 0;
-                }
-                const quantity = row["Q'ty"] || row['Qty'] || row['Quantity'] || row['quantity'] || '';
-
-                const newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> = {
-                    projectId,
-                    name: taskName,
-                    category,
-                    planStartDate: start.toISOString().split('T')[0],
-                    planEndDate: end.toISOString().split('T')[0],
-                    progress,
-                    status: progress === 100 ? 'completed' : progress > 0 ? 'in-progress' : 'not-started',
-                    order: taskCount,
-                    planDuration: duration,
-                    cost,
-                    quantity
-                };
-
-                await addTask(newTask);
-                taskCount++;
-            }
-
-            await fetchStats();
-            alert(`นำเข้าข้อมูลสำเร็จ: ${taskCount} งาน`);
-
-        } catch (error) {
-            console.error('Import Error:', error);
-            alert('เกิดข้อผิดพลาดในการอ่านไฟล์ CSV');
-        } finally {
-            setImporting(false);
             e.target.value = '';
+            return;
         }
+
+        setAlertDialog({
+            isOpen: true,
+            title: 'ยืนยันการนำเข้า',
+            message: `ต้องการนำเข้าข้อมูลจากไฟล์ "${file.name}" หรือไม่?\nข้อมูลจะถูกเพิ่มเป็นโครงการใหม่`,
+            type: 'confirm',
+            onConfirm: async () => {
+                setAlertDialog(prev => ({ ...prev, isOpen: false }));
+                setImporting(true);
+
+                try {
+                    // Read CSV file
+                    const text = await new Promise<string>((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => resolve(e.target?.result as string);
+                        reader.onerror = reject;
+                        reader.readAsText(file, 'UTF-8');
+                    });
+
+                    // Parse CSV
+                    const lines = text.split(/\r?\n/).filter(line => line.trim());
+                    if (lines.length < 2) {
+                        throw new Error('CSV file is empty or has no data rows');
+                    }
+
+                    // Parse headers (first line)
+                    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+
+                    // Parse data rows
+                    const data: any[] = [];
+                    for (let i = 1; i < lines.length; i++) {
+                        const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
+                        const row: any = {};
+                        headers.forEach((header, idx) => {
+                            row[header] = values[idx] || '';
+                        });
+                        data.push(row);
+                    }
+
+                    // Create a new Project
+                    const newProject: Omit<Project, 'id' | 'createdAt' | 'updatedAt'> = {
+                        name: file.name.replace(/\.csv$/i, ''),
+                        owner: settings.profile.name,
+                        startDate: new Date().toISOString().split('T')[0],
+                        endDate: new Date().toISOString().split('T')[0],
+                        status: 'in-progress',
+                        overallProgress: 0,
+                        description: `Imported from ${file.name}`
+                    };
+
+                    const projectId = await addProject(newProject);
+
+                    let taskCount = 0;
+                    let minDate = new Date(8640000000000000);
+                    let maxDate = new Date(-8640000000000000);
+
+                    for (const row of data) {
+                        // Support various column names
+                        const taskName = row['Task'] || row['name'] || row['Name'] || row['title'] || row['Title'];
+
+                        if (!taskName || taskName === '(Day)' || taskName === '(Baht)') continue;
+
+                        const category = row['Category'] || row['category'] || row['No.'] ? `Group ${row['No.']}` : 'Imported Tasks';
+
+                        // Date Parsing
+                        const parseDate = (val: any) => {
+                            if (!val) return null;
+                            const d = new Date(val);
+                            return isNaN(d.getTime()) ? null : d;
+                        };
+
+                        let start = parseDate(row['Start'] || row['planStartDate'] || row['StartDate']) || new Date();
+                        let end = parseDate(row['End'] || row['planEndDate'] || row['EndDate']) || new Date();
+
+                        if (start < minDate) minDate = start;
+                        if (end > maxDate) maxDate = end;
+
+                        // Duration
+                        let duration = 0;
+                        if (row['Duration'] || row['planDuration']) {
+                            duration = Number(row['Duration'] || row['planDuration']) || 0;
+                        } else {
+                            const diffTime = Math.abs(end.getTime() - start.getTime());
+                            duration = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+                        }
+
+                        const progress = Number(row['Progress'] || row['progress']) || 0;
+
+                        // Cost & Quantity
+                        let cost = 0;
+                        const rawCost = row['Cost'] || row['cost'] || row['Cost (Baht)'];
+                        if (rawCost && rawCost !== '-') {
+                            cost = parseFloat(String(rawCost).replace(/,/g, '')) || 0;
+                        }
+                        const quantity = row["Q'ty"] || row['Qty'] || row['Quantity'] || row['quantity'] || '';
+
+                        const newTask: Omit<Task, 'id' | 'createdAt' | 'updatedAt'> = {
+                            projectId,
+                            name: taskName,
+                            category,
+                            planStartDate: start.toISOString().split('T')[0],
+                            planEndDate: end.toISOString().split('T')[0],
+                            progress,
+                            status: progress === 100 ? 'completed' : progress > 0 ? 'in-progress' : 'not-started',
+                            order: taskCount,
+                            planDuration: duration,
+                            cost,
+                            quantity
+                        };
+
+                        await addTask(newTask);
+                        taskCount++;
+                    }
+
+                    await fetchStats();
+                    setAlertDialog({
+                        isOpen: true,
+                        title: 'สำเร็จ',
+                        message: `นำเข้าข้อมูลสำเร็จ: ${taskCount} งาน`,
+                        type: 'success',
+                        onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+
+                } catch (error) {
+                    console.error('Import Error:', error);
+                    setAlertDialog({
+                        isOpen: true,
+                        title: 'ข้อผิดพลาด',
+                        message: 'เกิดข้อผิดพลาดในการอ่านไฟล์ CSV',
+                        type: 'error',
+                        onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+                } finally {
+                    setImporting(false);
+                    e.target.value = '';
+                }
+            },
+            onCancel: () => {
+                setAlertDialog(prev => ({ ...prev, isOpen: false }));
+                e.target.value = '';
+            }
+        });
     };
 
     const handleClearData = async () => {
-        if (!confirm('คำเตือน: ข้อมูลทั้งหมดจะถูกลบและกู้คืนไม่ได้! ต้องการดำเนินการต่อหรือไม่?')) return;
-        if (!confirm('ยืนยันครั้งสุดท้าย: ลบข้อมูลทั้งหมดใช่หรือไม่?')) return;
+        setAlertDialog({
+            isOpen: true,
+            title: 'คำเตือน: ลบข้อมูล',
+            message: 'ข้อมูลทั้งหมดจะถูกลบและกู้คืนไม่ได้! ต้องการดำเนินการต่อหรือไม่?',
+            type: 'warning',
+            onConfirm: () => {
+                setAlertDialog(prev => ({ ...prev, isOpen: false }));
+                // Second confirmation
+                setTimeout(() => {
+                    setAlertDialog({
+                        isOpen: true,
+                        title: 'ยืนยันครั้งสุดท้าย',
+                        message: 'คุณแน่ใจว่าต้องการลบข้อมูลทั้งหมดใช่หรือไม่?',
+                        type: 'error',
+                        onConfirm: async () => {
+                            setAlertDialog(prev => ({ ...prev, isOpen: false }));
 
-        setClearing(true);
-        try {
-            await clearAllData(); // Need to ensure this exists or create it
-            await fetchStats();
-            alert('ลบข้อมูลเรียบร้อยแล้ว');
-        } catch (error) {
-            console.error('Clear error:', error);
-            alert('ลบข้อมูลไม่สำเร็จ');
-        } finally {
-            setClearing(false);
-        }
+                            setClearing(true);
+                            try {
+                                await clearAllData();
+                                await fetchStats();
+                                setAlertDialog({
+                                    isOpen: true,
+                                    title: 'สำเร็จ',
+                                    message: 'ลบข้อมูลเรียบร้อยแล้ว',
+                                    type: 'success',
+                                    onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                                });
+                            } catch (error) {
+                                console.error('Clear error:', error);
+                                setAlertDialog({
+                                    isOpen: true,
+                                    title: 'ข้อผิดพลาด',
+                                    message: 'ลบข้อมูลไม่สำเร็จ',
+                                    type: 'error',
+                                    onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                                });
+                            } finally {
+                                setClearing(false);
+                            }
+                        },
+                        onCancel: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+                }, 300);
+            },
+            onCancel: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+        });
     };
 
     const handleExportData = async () => {
@@ -390,7 +494,13 @@ export default function SettingsPage() {
             const tasks = await getAllTasks();
 
             if (tasks.length === 0) {
-                alert('ไม่มีข้อมูลงานให้ส่งออก');
+                setAlertDialog({
+                    isOpen: true,
+                    title: 'แจ้งเตือน',
+                    message: 'ไม่มีข้อมูลงานให้ส่งออก',
+                    type: 'info',
+                    onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                });
                 return;
             }
 
@@ -424,16 +534,32 @@ export default function SettingsPage() {
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         } catch (error) {
             console.error('Export error:', error);
-            alert('ไม่สามารถส่งออกข้อมูลได้');
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'ไม่สามารถส่งออกข้อมูลได้',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
         }
     };
 
     // Member functions
     const handleAddMember = async () => {
         if (!memberForm.name || !memberForm.email) {
-            alert('กรุณากรอกชื่อและอีเมล');
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'กรุณากรอกชื่อและอีเมล',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
             return;
         }
 
@@ -464,9 +590,16 @@ export default function SettingsPage() {
             setIsMemberModalOpen(false);
             setEditingMember(null);
             setMemberForm({ name: '', email: '', phone: '', role: 'viewer' });
+            setMemberForm({ name: '', email: '', phone: '', role: 'viewer' });
         } catch (error) {
             console.error('Error saving member:', error);
-            alert('เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
         } finally {
             setSavingMember(false);
         }
@@ -479,15 +612,29 @@ export default function SettingsPage() {
     };
 
     const handleRemoveMember = async (id: string) => {
-        if (!confirm('ต้องการลบสมาชิกนี้หรือไม่?')) return;
-
-        try {
-            await deleteMember(id);
-            await fetchMembers();
-        } catch (error) {
-            console.error('Error deleting member:', error);
-            alert('เกิดข้อผิดพลาดในการลบสมาชิก');
-        }
+        setAlertDialog({
+            isOpen: true,
+            title: 'ยืนยันการลบ',
+            message: 'ต้องการลบสมาชิกนี้หรือไม่?',
+            type: 'confirm',
+            onConfirm: async () => {
+                setAlertDialog(prev => ({ ...prev, isOpen: false }));
+                try {
+                    await deleteMember(id);
+                    await fetchMembers();
+                } catch (error) {
+                    console.error('Error deleting member:', error);
+                    setAlertDialog({
+                        isOpen: true,
+                        title: 'ข้อผิดพลาด',
+                        message: 'เกิดข้อผิดพลาดในการลบสมาชิก',
+                        type: 'error',
+                        onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+                }
+            },
+            onCancel: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+        });
     };
 
     const getRoleBadge = (role: Member['role']) => {
@@ -864,6 +1011,53 @@ export default function SettingsPage() {
                     )}
                 </div>
             </div>
+            {/* Alert/Confirm Modal */}
+            {alertDialog.isOpen && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
+                        <div className="p-6 text-center">
+                            <div className={`w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center ${alertDialog.type === 'error' ? 'bg-red-100 text-red-600' :
+                                alertDialog.type === 'success' ? 'bg-green-100 text-green-600' :
+                                    alertDialog.type === 'confirm' ? 'bg-blue-100 text-blue-600' :
+                                        'bg-gray-100 text-gray-600'
+                                }`}>
+                                {alertDialog.type === 'error' && <AlertTriangle className="w-6 h-6" />}
+                                {alertDialog.type === 'success' && <CheckCircle2 className="w-6 h-6" />}
+                                {(alertDialog.type === 'confirm' || alertDialog.type === 'info') && <Info className="w-6 h-6" />}
+                                {alertDialog.type === 'warning' && <AlertTriangle className="w-6 h-6" />}
+                            </div>
+
+                            <h3 className="text-lg font-bold text-gray-900 mb-2">
+                                {alertDialog.title}
+                            </h3>
+                            <p className="text-sm text-gray-500 mb-6 whitespace-pre-line">
+                                {alertDialog.message}
+                            </p>
+
+                            <div className="flex gap-3 justify-center">
+                                {(alertDialog.type === 'confirm' || alertDialog.type === 'warning') && (
+                                    <button
+                                        onClick={alertDialog.onCancel}
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                    >
+                                        ยกเลิก
+                                    </button>
+                                )}
+                                <button
+                                    onClick={alertDialog.onConfirm}
+                                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' :
+                                        alertDialog.type === 'success' ? 'bg-green-600 hover:bg-green-700' :
+                                            alertDialog.type === 'warning' ? 'bg-orange-500 hover:bg-orange-600' :
+                                                'bg-black hover:bg-gray-800'
+                                        }`}
+                                >
+                                    ตกลง
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

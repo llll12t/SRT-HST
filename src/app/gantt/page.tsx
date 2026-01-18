@@ -22,14 +22,18 @@ export default function GanttPage() {
     const [showAddTaskModal, setShowAddTaskModal] = useState(false);
     const [saving, setSaving] = useState(false);
     const [importing, setImporting] = useState(false);
+    const [autoLink, setAutoLink] = useState(true);
     const [newTask, setNewTask] = useState({
         name: '',
         category: '',
+        type: 'task',
         planStartDate: format(new Date(), 'yyyy-MM-dd'),
         duration: '1', // Duration in days
         cost: '',
         quantity: '',
-        responsible: ''
+        responsible: '',
+        parentTaskId: '',
+        color: '#3b82f6'
     });
 
     // Calculate end date from start date and duration
@@ -106,7 +110,7 @@ export default function GanttPage() {
             if (actualProgress === 100) newStatus = 'completed';
             else if (actualProgress > 0) newStatus = 'in-progress';
             else if (isStartingWork) newStatus = 'in-progress';
-            else if (actualProgress === 0 && task.status === 'in-progress') newStatus = 'in-progress';
+            // If 0 and not starting work, default to 'not-started' (Reset)
 
             const updateData: any = {
                 progress: actualProgress,
@@ -160,6 +164,66 @@ export default function GanttPage() {
         }
     }, [selectedProjectId]);
 
+    // Handle opening modal for subtask
+    const handleAddSubTask = (parentId: string) => {
+        const parent = tasks.find(t => t.id === parentId);
+        if (parent) {
+            // Find sibling tasks (children of the same parent)
+            const siblingTasks = tasks.filter(t => t.parentTaskId === parentId && t.type !== 'group');
+
+            let defaultStartDate = format(new Date(), 'yyyy-MM-dd');
+
+            if (siblingTasks.length > 0) {
+                // Find the latest end date among siblings
+                let maxEndDate = siblingTasks[0].planEndDate;
+                siblingTasks.forEach(t => {
+                    if (t.planEndDate > maxEndDate) maxEndDate = t.planEndDate;
+                });
+                // Start the day after the last sibling ends
+                try {
+                    const nextDay = addDays(parseISO(maxEndDate), 1);
+                    defaultStartDate = format(nextDay, 'yyyy-MM-dd');
+                } catch (e) {
+                    defaultStartDate = maxEndDate;
+                }
+            } else if (parent.planStartDate) {
+                // If no siblings, use parent's start date
+                defaultStartDate = parent.planStartDate;
+            }
+
+            setNewTask({
+                name: '',
+                category: parent.category, // Inherit category from parent
+                type: 'task', // Default to task (not group)
+                planStartDate: defaultStartDate,
+                duration: '1',
+                cost: '',
+                quantity: '',
+                responsible: '',
+                parentTaskId: parentId, // Set parent to this Group/Task
+                color: '#3b82f6'
+            });
+            setShowAddTaskModal(true);
+        }
+    };
+
+    // Handle opening modal for category task
+    const handleAddTaskToCategory = (category: string) => {
+        setNewTask({
+            name: '',
+            category: category,
+            type: 'task',
+            planStartDate: format(new Date(), 'yyyy-MM-dd'),
+            duration: '1',
+            cost: '',
+            quantity: '',
+            responsible: '',
+            parentTaskId: '',
+            color: '#3b82f6'
+        });
+        setShowAddTaskModal(true);
+    };
+
     // Handle adding a new task
     const handleAddTask = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -169,10 +233,30 @@ export default function GanttPage() {
         try {
             const { createTask } = await import('@/lib/firestore');
             const planDuration = Math.max(1, parseInt(newTask.duration) || 1);
+            const currentMaxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : 0;
+
+            // Determine predecessor
+            let predecessorId: string | undefined;
+            if (autoLink) {
+                if (newTask.parentTaskId) {
+                    // If subtask, link to the last sibling
+                    const siblings = tasks.filter(t => t.parentTaskId === newTask.parentTaskId);
+                    if (siblings.length > 0) {
+                        predecessorId = siblings[siblings.length - 1].id;
+                    }
+                } else {
+                    // If root task, link to the absolute last task in the project
+                    if (tasks.length > 0) {
+                        predecessorId = tasks[tasks.length - 1].id;
+                    }
+                }
+            }
+
             await createTask({
                 projectId: selectedProjectId,
                 name: newTask.name,
                 category: newTask.category,
+                type: newTask.type as 'task' | 'group',
                 planStartDate: newTask.planStartDate,
                 planEndDate: storageEndDate,
                 planDuration: planDuration,
@@ -181,19 +265,26 @@ export default function GanttPage() {
                 responsible: newTask.responsible || undefined,
                 progress: 0,
                 status: 'not-started',
-                order: tasks.length + 1
+                order: currentMaxOrder + 1,
+                parentTaskId: newTask.parentTaskId || undefined,
+                color: newTask.color,
+                predecessors: predecessorId ? [predecessorId] : undefined
             });
 
             // Reset form and close modal
             setNewTask({
                 name: '',
                 category: '',
+                type: 'task',
                 planStartDate: format(new Date(), 'yyyy-MM-dd'),
                 duration: '1',
                 cost: '',
                 quantity: '',
-                responsible: ''
+                responsible: '',
+                parentTaskId: '',
+                color: '#3b82f6'
             });
+            setAutoLink(true); // Reset to default
             setShowAddTaskModal(false);
 
             // Refresh tasks
@@ -293,6 +384,9 @@ export default function GanttPage() {
             let count = 0;
             const currentMaxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : 0;
 
+            // Link first imported task to the last existing task
+            let lastTaskId: string | null = tasks.length > 0 ? tasks[tasks.length - 1].id : null;
+
             for (const row of data) {
                 const name = row['Task Name'] || row['Task'] || row['Name'] || row['name'];
                 if (!name) continue;
@@ -310,7 +404,7 @@ export default function GanttPage() {
                 const planEnd = parseDate(row['Plan End'] || row['End']) || storageEndDate;
                 const duration = parseInt(row['Duration'] || row['Duration (Days)']) || 1;
 
-                await addTask({
+                const newTaskId: string = await addTask({
                     projectId: selectedProjectId,
                     name,
                     category,
@@ -322,8 +416,12 @@ export default function GanttPage() {
                     responsible: row['Responsible'] || undefined,
                     progress: parseFloat(row['Progress'] || row['Progress (%)'] || '0') || 0,
                     status: 'not-started',
-                    order: currentMaxOrder + count + 1
+                    order: currentMaxOrder + count + 1,
+                    predecessors: lastTaskId ? [lastTaskId] : undefined
                 });
+
+                // Update lastTaskId for the next iteration to chain dependencies
+                lastTaskId = newTaskId;
                 count++;
             }
 
@@ -479,6 +577,15 @@ export default function GanttPage() {
                             <span className="text-[10px] text-gray-500 font-bold uppercase">Project</span>
                             <span className="text-xs font-bold text-gray-900 max-w-[100px] truncate">{selectedProject?.name}</span>
                         </div>
+                        {/* Project Date Range */}
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded-sm">
+                            <span className="text-[10px] text-blue-600 font-bold uppercase">Period</span>
+                            <span className="text-xs font-bold text-blue-800 font-mono">
+                                {selectedProject?.startDate ? format(parseISO(selectedProject.startDate), 'd MMM yy') : '-'}
+                                {' → '}
+                                {selectedProject?.endDate ? format(parseISO(selectedProject.endDate), 'd MMM yy') : '-'}
+                            </span>
+                        </div>
                         <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-200 rounded-sm">
                             <span className="text-[10px] text-gray-500 font-bold uppercase">Progress</span>
                             <span className="text-xs font-bold text-blue-600 font-mono">{overallProgress.toFixed(1)}%</span>
@@ -550,6 +657,8 @@ export default function GanttPage() {
                     title={selectedProject.name}
                     onTaskUpdate={handleTaskUpdate}
                     onOpenProgressModal={openProgressModal}
+                    onAddSubTask={handleAddSubTask}
+                    onAddTaskToCategory={handleAddTaskToCategory}
                 />
             )}
 
@@ -594,137 +703,213 @@ export default function GanttPage() {
 
                         {/* Modal Body */}
                         <form onSubmit={handleAddTask} className="p-4 space-y-4">
-                            {/* Category */}
-                            <div>
-                                <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                    หมวดหมู่ <span className="text-red-500">*</span>
+                            {/* Parent Group Indicator */}
+                            {newTask.parentTaskId && (
+                                <div className="p-2 bg-blue-50 border border-blue-200 rounded-sm flex items-center gap-2">
+                                    <span className="text-[10px] bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-medium">
+                                        อยู่ภายใต้
+                                    </span>
+                                    <span className="text-sm font-medium text-blue-800">
+                                        {tasks.find(t => t.id === newTask.parentTaskId)?.name || 'Unknown'}
+                                    </span>
+                                </div>
+                            )}
+
+                            {/* Type Selector */}
+                            <div className="flex gap-4 border-b border-gray-100 pb-2">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="taskType"
+                                        checked={newTask.type === 'task'}
+                                        onChange={() => setNewTask({ ...newTask, type: 'task' })}
+                                        className="text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">Task (งานปกติ)</span>
                                 </label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={newTask.category}
-                                    onChange={(e) => {
-                                        const category = e.target.value;
-                                        setNewTask(prev => {
-                                            const updates: any = { category };
-
-                                            // Find existing tasks in this category
-                                            const categoryTasks = tasks.filter(t => t.category === category);
-
-                                            if (categoryTasks.length > 0) {
-                                                // Find the latest planEndDate
-                                                let maxEndDate = categoryTasks[0].planEndDate;
-                                                categoryTasks.forEach(t => {
-                                                    if (t.planEndDate > maxEndDate) maxEndDate = t.planEndDate;
-                                                });
-                                                updates.planStartDate = maxEndDate;
-                                            }
-
-                                            return { ...prev, ...updates };
-                                        });
-                                    }}
-                                    placeholder="เช่น งานโครงสร้าง"
-                                    list="category-suggestions"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                                />
-                                <datalist id="category-suggestions">
-                                    {existingCategories.map(cat => (
-                                        <option key={cat} value={cat} />
-                                    ))}
-                                </datalist>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="radio"
+                                        name="taskType"
+                                        checked={newTask.type === 'group'}
+                                        onChange={() => setNewTask({ ...newTask, type: 'group' })}
+                                        className="text-blue-600 focus:ring-blue-500"
+                                    />
+                                    <span className="text-sm font-medium text-gray-700">Group (หัวข้อหลัก)</span>
+                                </label>
                             </div>
+                            {/* Category - Hide when adding subtask (inherited from parent) */}
+                            {!newTask.parentTaskId && (
+                                <div>
+                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                                        หมวดหมู่ <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={newTask.category}
+                                        onChange={(e) => {
+                                            const category = e.target.value;
+                                            setNewTask(prev => {
+                                                const updates: any = { category };
 
-                            {/* Task Name */}
+                                                // Find existing tasks in this category
+                                                const categoryTasks = tasks.filter(t => t.category === category);
+
+                                                if (categoryTasks.length > 0) {
+                                                    // Find the latest planEndDate
+                                                    let maxEndDate = categoryTasks[0].planEndDate;
+                                                    categoryTasks.forEach(t => {
+                                                        if (t.planEndDate > maxEndDate) maxEndDate = t.planEndDate;
+                                                    });
+                                                    // Set start date to the NEXT day after the last task ends
+                                                    try {
+                                                        const nextDay = addDays(parseISO(maxEndDate), 1);
+                                                        updates.planStartDate = format(nextDay, 'yyyy-MM-dd');
+                                                    } catch (e) {
+                                                        updates.planStartDate = maxEndDate;
+                                                    }
+                                                }
+
+                                                return { ...prev, ...updates };
+                                            });
+                                        }}
+                                        placeholder="เช่น งานโครงสร้าง"
+                                        list="category-suggestions"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                    />
+                                    <datalist id="category-suggestions">
+                                        {existingCategories.map(cat => (
+                                            <option key={cat} value={cat} />
+                                        ))}
+                                    </datalist>
+                                </div>
+                            )}
+
+                            {/* Name - different label for Task vs Group */}
                             <div>
                                 <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                    ชื่องาน <span className="text-red-500">*</span>
+                                    {newTask.type === 'group' ? 'ชื่อ Group' : 'ชื่องาน'} <span className="text-red-500">*</span>
                                 </label>
                                 <input
                                     type="text"
                                     required
                                     value={newTask.name}
                                     onChange={(e) => setNewTask(prev => ({ ...prev, name: e.target.value }))}
-                                    placeholder="เช่น งานขุดดินฐานราก"
+                                    placeholder={newTask.type === 'group' ? 'เช่น งานฐานราก' : 'เช่น งานขุดดินฐานราก'}
                                     className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                                 />
+                                {newTask.type === 'group' && (
+                                    <p className="text-xs text-gray-500 mt-1">ใช้เป็นชื่อหมวดหมู่ย่อยที่แสดงใน Gantt Chart</p>
+                                )}
                             </div>
 
-                            {/* Date Range */}
-                            <div className="grid grid-cols-3 gap-3">
-                                <div>
-                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                        วันเริ่มต้น
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={newTask.planStartDate}
-                                        onChange={(e) => setNewTask(prev => ({ ...prev, planStartDate: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                        จำนวนวัน
-                                    </label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={newTask.duration}
-                                        onChange={(e) => setNewTask(prev => ({ ...prev, duration: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono text-center"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                        วันสิ้นสุด
-                                    </label>
-                                    <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-sm text-sm text-gray-700 font-mono">
-                                        {displayEndDate}
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Cost & Quantity */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                        งบประมาณ (บาท)
-                                    </label>
-                                    <input
-                                        type="number"
-                                        value={newTask.cost || ''}
-                                        onChange={(e) => setNewTask(prev => ({ ...prev, cost: e.target.value }))}
-                                        placeholder="0"
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                        ปริมาณ
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={newTask.quantity || ''}
-                                        onChange={(e) => setNewTask(prev => ({ ...prev, quantity: e.target.value }))}
-                                        placeholder="เช่น 20 ตร.ม."
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
-                                    />
-                                </div>
-                            </div>
-
-                            {/* Responsible */}
-                            <div>
-                                <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
-                                    ผู้รับผิดชอบ
-                                </label>
+                            {/* Auto Link Checkbox */}
+                            <div className="flex items-center gap-2">
                                 <input
-                                    type="text"
-                                    value={newTask.responsible || ''}
-                                    onChange={(e) => setNewTask(prev => ({ ...prev, responsible: e.target.value }))}
-                                    placeholder="เช่น นายช่าง ก"
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                    type="checkbox"
+                                    id="autoLink"
+                                    checked={autoLink}
+                                    onChange={(e) => setAutoLink(e.target.checked)}
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                 />
+                                <label htmlFor="autoLink" className="text-sm font-medium text-gray-700 cursor-pointer user-select-none">
+                                    เชื่อมต่องานอัตโนมัติ (Connect to previous task)
+                                </label>
                             </div>
+
+
+
+                            {/* Fields only for Tasks (Groups auto-calculate from children) */}
+                            {newTask.type === 'task' && (
+                                <>
+                                    {/* Date Range */}
+                                    <div className="grid grid-cols-3 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                                                วันเริ่มต้น
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={newTask.planStartDate}
+                                                onChange={(e) => setNewTask(prev => ({ ...prev, planStartDate: e.target.value }))}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                                                จำนวนวัน
+                                            </label>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                value={newTask.duration}
+                                                onChange={(e) => setNewTask(prev => ({ ...prev, duration: e.target.value }))}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono text-center"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                                                วันสิ้นสุด
+                                            </label>
+                                            <div className="w-full px-3 py-2 border border-gray-200 bg-gray-50 rounded-sm text-sm text-gray-700 font-mono">
+                                                {displayEndDate}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Cost & Quantity */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                                                งบประมาณ (บาท)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={newTask.cost || ''}
+                                                onChange={(e) => setNewTask(prev => ({ ...prev, cost: e.target.value }))}
+                                                placeholder="0"
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                                                ปริมาณ
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={newTask.quantity || ''}
+                                                onChange={(e) => setNewTask(prev => ({ ...prev, quantity: e.target.value }))}
+                                                placeholder="เช่น 20 ตร.ม."
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Responsible */}
+                                    <div>
+                                        <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-1">
+                                            ผู้รับผิดชอบ
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={newTask.responsible || ''}
+                                            onChange={(e) => setNewTask(prev => ({ ...prev, responsible: e.target.value }))}
+                                            placeholder="เช่น นายช่าง ก"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            {/* Info for Groups */}
+                            {newTask.type === 'group' && (
+                                <div className="p-3 bg-blue-50 border border-blue-200 rounded-sm">
+                                    <p className="text-sm text-blue-700">
+                                        <strong>หมายเหตุ:</strong> Group จะคำนวณระยะเวลา งบประมาณ และ Progress จากงานย่อยภายในอัตโนมัติ
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Actions */}
                             <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
@@ -798,35 +983,49 @@ export default function GanttPage() {
 
                             {/* Progress Selection Buttons */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">เลือก Progress</label>
-                                <div className="flex items-center justify-center gap-2 flex-wrap">
-                                    {/* Start Work Button */}
+                                <label className="block text-sm font-medium text-gray-700 mb-2">ระบุความคืบหน้า (%)</label>
+                                <div className="flex flex-col gap-3">
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            max="100"
+                                            value={progressUpdate.newProgress === -1 ? 0 : progressUpdate.newProgress}
+                                            onChange={(e) => {
+                                                const val = parseInt(e.target.value);
+                                                if (!isNaN(val)) {
+                                                    setProgressUpdate({ ...progressUpdate, newProgress: Math.min(100, Math.max(0, val)) });
+                                                }
+                                            }}
+                                            className="w-24 px-3 py-2 text-center text-lg font-bold border border-gray-300 rounded-sm focus:border-blue-500 outline-none"
+                                        />
+                                        <div className="flex-1 flex gap-2 flex-wrap">
+                                            {[0, 25, 50, 75, 100].map((val) => (
+                                                <button
+                                                    key={val}
+                                                    type="button"
+                                                    onClick={() => setProgressUpdate({ ...progressUpdate, newProgress: val })}
+                                                    className={`px-3 py-1.5 text-xs font-medium rounded-sm border transition-colors ${progressUpdate.newProgress === val
+                                                        ? 'bg-blue-600 text-white border-blue-600'
+                                                        : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
+                                                        }`}
+                                                >
+                                                    {val === 0 ? 'Reset' : `${val}%`}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
                                     <button
                                         type="button"
                                         onClick={() => setProgressUpdate({ ...progressUpdate, newProgress: -1 })}
-                                        className={`px-4 py-2 text-sm font-medium rounded-sm transition-colors ${progressUpdate.newProgress === -1
-                                            ? 'bg-amber-500 text-white'
-                                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                                        className={`w-full py-2 text-sm font-medium rounded-sm border border-dashed transition-colors flex items-center justify-center gap-2 ${progressUpdate.newProgress === -1
+                                            ? 'bg-amber-50 text-amber-600 border-amber-300'
+                                            : 'bg-gray-50 text-gray-500 border-gray-300 hover:bg-gray-100'
                                             }`}
                                     >
-                                        เริ่มงาน
+                                        🚩 เริ่มงาน (Start Work Only)
                                     </button>
-                                    {/* Progress Buttons */}
-                                    {[25, 50, 75, 100].map((val) => (
-                                        <button
-                                            key={val}
-                                            type="button"
-                                            onClick={() => setProgressUpdate({ ...progressUpdate, newProgress: val })}
-                                            className={`px-4 py-2 text-sm font-medium rounded-sm transition-colors ${progressUpdate.newProgress === val
-                                                ? val === 100
-                                                    ? 'bg-green-600 text-white'
-                                                    : 'bg-blue-600 text-white'
-                                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                                                }`}
-                                        >
-                                            {val}%
-                                        </button>
-                                    ))}
                                 </div>
                             </div>
 
