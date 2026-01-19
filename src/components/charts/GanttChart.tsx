@@ -3,7 +3,18 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Task } from '@/types/construction';
 import { format, parseISO, differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval, eachYearOfInterval, startOfMonth, endOfMonth, startOfYear, endOfYear, addMonths, subMonths, isSameDay, isToday, isWeekend, differenceInMonths, isBefore, isAfter, addDays } from 'date-fns';
-import { th } from 'date-fns/locale';
+
+const formatDateTH = (dateStr: string | Date | undefined | null) => {
+    if (!dateStr) return '-';
+    // Handle "autoupdate" prefix if passed accidentally, though we shouldn't pass it here
+    const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+    if (isNaN(date.getTime())) return '-';
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yearBE = (date.getFullYear() + 543).toString().slice(-2);
+    return `${day}/${month}/${yearBE}`;
+};
+
 import { ChevronRight, ChevronDown, Plus, AlertTriangle, X } from 'lucide-react';
 
 import { ViewMode, DragState, RowDragState } from './gantt/types';
@@ -844,7 +855,8 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
 
     // Get all descendant tasks recursively for a Group
     const getAllDescendants = (taskId: string): Task[] => {
-        const children = tasks.filter(t => t.parentTaskId === taskId);
+        // Ensure strictly string comparison to avoid ID mismatch issues
+        const children = tasks.filter(t => t.parentTaskId && String(t.parentTaskId) === String(taskId));
         let descendants: Task[] = [];
         children.forEach(child => {
             if (child.type === 'group') {
@@ -862,25 +874,61 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         const descendants = getAllDescendants(groupTask.id);
         const leafTasks = descendants.filter(t => t.type !== 'group'); // Only count actual tasks
 
+        // Track Min/Max Dates
+        let minDate: Date | null = null;
+        let maxDate: Date | null = null;
+        let minActualDate: Date | null = null;
+        let maxActualDate: Date | null = null;
+
+        let totalCost = 0;
+        let weightedProgress = 0;
+        let totalWeight = 0;
+
+        // If no leaves, return empty stats so group doesn't show confusing dates
         if (leafTasks.length === 0) {
             return {
                 count: 0,
-                minStartDate: groupTask.planStartDate,
-                maxEndDate: groupTask.planEndDate,
+                minStartDate: '', // Clear dates if no children
+                maxEndDate: '',
+                minActualDate: null,
+                maxActualDate: null,
                 progress: 0,
                 totalCost: 0
             };
         }
 
-        let minStartDate = leafTasks[0].planStartDate;
-        let maxEndDate = leafTasks[0].planEndDate;
-        let totalCost = 0;
-        let weightedProgress = 0;
-        let totalWeight = 0;
-
         leafTasks.forEach(task => {
-            if (task.planStartDate < minStartDate) minStartDate = task.planStartDate;
-            if (task.planEndDate > maxEndDate) maxEndDate = task.planEndDate;
+            // Plan Dates
+            if (task.planStartDate) {
+                const d = parseISO(task.planStartDate);
+                if (!minDate || isBefore(d, minDate)) minDate = d;
+            }
+            if (task.planEndDate) {
+                const d = parseISO(task.planEndDate);
+                if (!maxDate || isAfter(d, maxDate)) maxDate = d;
+            }
+
+            // Actual Dates
+            if (task.actualStartDate) {
+                const d = parseISO(task.actualStartDate);
+                if (!minActualDate || isBefore(d, minActualDate)) minActualDate = d;
+
+                // Effective Actual End Date Logic
+                let effectiveEnd = d;
+                if (task.actualEndDate) {
+                    effectiveEnd = parseISO(task.actualEndDate);
+                } else if ((task.progress || 0) > 0) {
+                    // Calculate estimated end based on progress
+                    const pStart = parseISO(task.planStartDate);
+                    const pEnd = parseISO(task.planEndDate);
+                    const plannedDuration = differenceInDays(pEnd, pStart) + 1;
+                    const progressDays = Math.round(plannedDuration * (Number(task.progress) / 100));
+                    effectiveEnd = addDays(d, Math.max(0, progressDays - 1));
+                }
+
+                if (!maxActualDate || isAfter(effectiveEnd, maxActualDate)) maxActualDate = effectiveEnd;
+            }
+
             totalCost += task.cost || 0;
             // Use cost as weight for progress calculation
             const taskWeight = task.cost || 1;
@@ -890,8 +938,10 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
 
         return {
             count: leafTasks.length,
-            minStartDate,
-            maxEndDate,
+            minStartDate: minDate ? format(minDate, 'yyyy-MM-dd') : groupTask.planStartDate,
+            maxEndDate: maxDate ? format(maxDate, 'yyyy-MM-dd') : groupTask.planEndDate,
+            minActualDate: minActualDate ? format(minActualDate, 'yyyy-MM-dd') : null,
+            maxActualDate: maxActualDate ? format(maxActualDate, 'yyyy-MM-dd') : null,
             progress: totalWeight > 0 ? Math.round(weightedProgress / totalWeight) : 0,
             totalCost
         };
@@ -926,16 +976,28 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         const relativeY = e.clientY - rect.top;
         const rowHeight = rect.height;
 
-        // Top 50% = above, Bottom 50% = below
-        let position: 'above' | 'below' | 'child';
-        if (relativeY < rowHeight * 0.5) {
-            position = 'above';
-        } else {
-            position = 'below';
-        }
+        // Determine position logic:
+        // If target is a GROUP:
+        // - Top 25%: Above
+        // - Bottom 25%: Below
+        // - Middle 50%: Child (Nest)
+        // If target is TASK:
+        // - Top 50%: Above
+        // - Bottom 50%: Below
 
-        // Prevent nesting explicitly
-        // position = 'child'; 
+        let position: 'above' | 'below' | 'child';
+
+        const targetTask = tasks.find(t => t.id === targetTaskId);
+        const isTargetGroup = targetTask?.type === 'group';
+
+        if (isTargetGroup) {
+            if (relativeY < rowHeight * 0.25) position = 'above';
+            else if (relativeY > rowHeight * 0.75) position = 'below';
+            else position = 'child';
+        } else {
+            if (relativeY < rowHeight * 0.5) position = 'above';
+            else position = 'below';
+        }
 
         setDropTargetId(targetTaskId);
         setDropPosition(position);
@@ -970,11 +1032,24 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         };
 
         if (dropPosition === 'child') {
-            // Disabled nesting
-            setRowDragState(null);
-            setDropTargetId(null);
-            setDropPosition(null);
-            return;
+            // Nesting into Group
+            const maxOrder = Math.max(0, ...tasks
+                .filter(t => t.parentTaskId === targetTaskId)
+                .map(t => t.order || 0));
+
+            await onTaskUpdate(draggedTaskId, {
+                parentTaskId: targetTaskId,
+                category: targetTask.category, // Adopt parent's category
+                order: maxOrder + 1
+            });
+
+            // Expand the group
+            setCollapsedTasks(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(targetTaskId);
+                return newSet;
+            });
+
         } else {
             // Reorder - above or below target
             // Get all sibling tasks with same parent
@@ -1043,7 +1118,7 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         let minDate: Date | null = null;
         let maxDate: Date | null = null;
 
-        allCategoryTasks.forEach(t => {
+        allCategoryTasks.filter(t => t.type !== 'group').forEach(t => {
             const start = parseISO(t.planStartDate);
             const end = parseISO(t.planEndDate);
             if (!minDate || isBefore(start, minDate)) minDate = start;
@@ -1270,7 +1345,7 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                             timeline={timeline}
                             config={config}
                             stickyWidth={stickyWidth}
-                            showDates={showDates} // Legacy or keep for global toggle? Keep for compliance if needed, but visibleColumns overrides
+                            showDates={showDates}
                             visibleColumns={visibleColumns}
                         />
 
@@ -1295,7 +1370,7 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                 else leftPx = (todayOffset / 30.44) * config.cellWidth;
 
                                 return (
-                                    <div className="absolute top-0 bottom-0 z-30 pointer-events-none" style={{ left: `${stickyWidth + leftPx}px` }}>
+                                    <div className="absolute top-0 bottom-0 z-25 pointer-events-none" style={{ left: `${stickyWidth + leftPx}px` }}>
                                         <div className="h-full w-px bg-orange-500"></div>
                                     </div>
                                 );
@@ -1325,11 +1400,6 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                                     });
                                                 };
                                                 // Start with root tasks of this category (those whose parents are NOT in this category or are null)
-                                                // Actually catTasks contains ALL tasks in category. We need to filter roots relative to hierarchy.
-                                                // The rendering loop iterates catTasks which are ALL tasks? 
-                                                // Wait, groupedTasks logic (line 622) puts ALL tasks in catTasks?
-                                                // No, line 617 only filters 'rootTasks' (no parent).
-                                                // So catTasks are ONLY the roots of that category.
                                                 processTasks(catTasks);
                                             }
                                         });
@@ -1456,7 +1526,7 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                             className="flex bg-white border-b border-dashed border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors h-8 group"
                                             onClick={() => toggleCategory(category)}
                                         >
-                                            <div className="sticky left-0 z-20 bg-white group-hover:bg-gray-50 border-r border-gray-300 px-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)] flex items-center gap-2"
+                                            <div className="sticky left-0 z-50 bg-white group-hover:bg-gray-50 border-r border-gray-300 px-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)] flex items-center gap-2"
                                                 style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
                                                 {/* Indent Level 0 (None) */}
                                                 <div className="w-4 flex justify-center">
@@ -1484,6 +1554,11 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
 
                                                 <div className="flex-1 truncate text-xs font-bold text-gray-900 uppercase tracking-wide group/cat-header flex items-center" title={category}>
                                                     {category}
+                                                    {categorySummary.dateRange && (
+                                                        <span className="text-[10px] text-blue-600 font-normal font-mono ml-2">
+                                                            (autoupdate {formatDateTH(categorySummary.dateRange.start)} - {formatDateTH(categorySummary.dateRange.end)})
+                                                        </span>
+                                                    )}
                                                     <span className="ml-2 text-[9px] text-gray-500 font-normal bg-gray-100 px-1.5 rounded-full">{categorySummary.count}</span>
                                                     {onAddTaskToCategory && (
                                                         <button
@@ -1609,7 +1684,7 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                                             onDrop={(e) => handleRowDrop(e, t.id)}
                                                             onDragEnd={handleRowDragEnd}
                                                         >
-                                                            <div className="sticky left-0 z-40 bg-white group-hover:bg-gray-50 border-r border-gray-300 flex items-center px-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)]"
+                                                            <div className="sticky left-0 z-50 bg-white group-hover:bg-gray-50 border-r border-gray-300 flex items-center px-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)]"
                                                                 style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
 
                                                                 {/* Indent + Collapse toggle */}
@@ -1680,6 +1755,11 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                                                     ${t.type === 'group' || hasChildren(t.id) ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}
                                                                     title={t.name}>
                                                                     {t.name}
+                                                                    {isGroup && displayStartDate && displayEndDate && (
+                                                                        <span className="text-[10px] text-blue-600 font-normal font-mono ml-2">
+                                                                            (autoupdate {formatDateTH(displayStartDate)} - {formatDateTH(displayEndDate)})
+                                                                        </span>
+                                                                    )}
                                                                     {t.parentTaskId && onTaskUpdate && (
                                                                         <button
                                                                             className="ml-1 text-[9px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
@@ -1709,7 +1789,7 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                                                 {visibleColumns.period && (
                                                                     <div className={`w-[110px] text-right text-[10px] font-mono shrink-0 ${isGroup ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
                                                                         {displayStartDate && displayEndDate ? (
-                                                                            <>{format(parseISO(displayStartDate), 'd/MM')} - {format(parseISO(displayEndDate), 'd/MM')}</>
+                                                                            <>{formatDateTH(displayStartDate)} - {formatDateTH(displayEndDate)}</>
                                                                         ) : '-'}
                                                                     </div>
                                                                 )}
@@ -1829,6 +1909,8 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                                                 {(() => {
                                                                     const isGroup = t.type === 'group';
                                                                     if (isGroup) {
+                                                                        if (!displayStartDate || !displayEndDate) return null;
+
                                                                         // Create a mock task with calculated dates for bar rendering
                                                                         const groupBarTask = {
                                                                             ...t,
@@ -1885,24 +1967,45 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
 
                                                                 {(() => {
                                                                     const actualDates = getActualDates(t);
-                                                                    const isStartMarker = Number(t.progress) === 0;
+                                                                    const isGroup = t.type === 'group';
 
-                                                                    return actualDates && (
+                                                                    // For groups, determine effective actual dates from summary
+                                                                    const groupActualDates = isGroup && groupSummary && groupSummary.minActualDate ? {
+                                                                        start: parseISO(groupSummary.minActualDate),
+                                                                        end: groupSummary.maxActualDate ? parseISO(groupSummary.maxActualDate) : parseISO(groupSummary.minActualDate)
+                                                                    } : null;
+
+                                                                    const finalActualDates = isGroup ? groupActualDates : actualDates;
+
+                                                                    if (isGroup) return null; // Don't render actual bars for groups
+
+                                                                    const isStartMarker = !isGroup && Number(t.progress) === 0; // Groups never just start marker
+
+                                                                    return finalActualDates && (
                                                                         <div
                                                                             className={`absolute h-2 top-[12px] z-[25] rounded-[1px] group/actual-bar
-                                                                                ${dragState?.taskId === t.id && dragState?.barType === 'actual'
+                                                                                ${!isGroup && (dragState?.taskId === t.id && dragState?.barType === 'actual')
                                                                                     ? 'z-50 border-white cursor-grabbing shadow-md'
-                                                                                    : 'cursor-grab border-white shadow-sm'}
+                                                                                    : isGroup ? 'pointer-events-none opacity-80' : 'cursor-grab border-white shadow-sm'}
                                                                                 ${isUpdating && (dragState?.taskId === t.id)
                                                                                     ? `bg-[linear-gradient(45deg,rgba(255,255,255,0.3)25%,transparent_25%,transparent_50%,rgba(255,255,255,0.3)50%,rgba(255,255,255,0.3)75%,transparent_75%,transparent)] bg-[length:10px_10px] animate-pulse ${isStartMarker ? 'bg-orange-500' : 'bg-green-400'}`
                                                                                     : isStartMarker ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-400 hover:bg-green-500'} 
                                                                                 transition-all
                                                                             `}
                                                                             style={{
-                                                                                ...getBarStyle(t, 'actual'),
+                                                                                // Manual getBarStyle logic because getBarStyle expects Task properties
+                                                                                ...(isGroup ? (() => {
+                                                                                    const startDiff = differenceInDays(finalActualDates.start, timeRange.start);
+                                                                                    const duration = differenceInDays(finalActualDates.end, finalActualDates.start) + 1;
+                                                                                    let left = 0, width = 0;
+                                                                                    if (viewMode === 'day') { left = startDiff * config.cellWidth; width = duration * config.cellWidth; }
+                                                                                    else if (viewMode === 'week') { left = (startDiff / 7) * config.cellWidth; width = (duration / 7) * config.cellWidth; }
+                                                                                    else { left = (startDiff / 30.44) * config.cellWidth; width = (duration / 30.44) * config.cellWidth; }
+                                                                                    return { left: `${left}px`, width: `${Math.max(4, width)}px` };
+                                                                                })() : getBarStyle(t, 'actual')),
                                                                                 ...(isStartMarker ? { width: '10px' } : {})
                                                                             }}
-                                                                            onMouseDown={(e) => startDrag(e, t, 'move', 'actual')}
+                                                                            onMouseDown={(e) => !isGroup && startDrag(e, t, 'move', 'actual')}
                                                                         >
                                                                             <div
                                                                                 className="absolute left-0 top-0 bottom-0 w-1 cursor-w-resize hover:bg-white/40"

@@ -440,25 +440,27 @@ export default function ProjectsPage() {
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            <Link
-                                                href={`/s-curve?project=${project.id}`}
-                                                className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors"
-                                                title="S-Curve"
-                                            >
-                                                <BarChart3 className="w-3.5 h-3.5" />
-                                                S-Curve
-                                            </Link>
-                                            <Link
-                                                href={`/gantt?projectId=${project.id}`}
-                                                className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors"
-                                                title="Gantt Chart"
-                                            >
-                                                <GanttChartSquare className="w-3.5 h-3.5" />
-                                                Gantt
-                                            </Link>
+                                            <div className="flex items-center gap-2">
+                                                <Link
+                                                    href={`/s-curve?project=${project.id}`}
+                                                    className="px-2.5 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center gap-1.5 shadow-sm transition-all hover:shadow-md"
+                                                    title="S-Curve"
+                                                >
+                                                    <BarChart3 className="w-3.5 h-3.5" />
+                                                    S-Curve
+                                                </Link>
+                                                <Link
+                                                    href={`/gantt?projectId=${project.id}`}
+                                                    className="px-2.5 py-1.5 text-xs font-medium text-white bg-teal-600 rounded-md hover:bg-teal-700 flex items-center gap-1.5 shadow-sm transition-all hover:shadow-md"
+                                                    title="Gantt Chart"
+                                                >
+                                                    <GanttChartSquare className="w-3.5 h-3.5" />
+                                                    Gantt
+                                                </Link>
+                                            </div>
                                             <Link
                                                 href={`/projects/${project.id}`}
-                                                className="text-sm text-blue-600 hover:text-blue-700 font-medium ml-1"
+                                                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-md hover:bg-gray-200 hover:text-gray-900 transition-all flex items-center gap-1"
                                             >
                                                 รายละเอียด →
                                             </Link>
@@ -531,17 +533,19 @@ export default function ProjectsPage() {
                                                 <div className="flex items-center justify-center gap-2">
                                                     <Link
                                                         href={`/s-curve?project=${project.id}`}
-                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-600 hover:text-blue-600 transition-colors"
+                                                        className="px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md hover:bg-indigo-100 transition-colors flex items-center gap-1.5"
                                                         title="S-Curve"
                                                     >
-                                                        <BarChart3 className="w-4 h-4" />
+                                                        <BarChart3 className="w-3.5 h-3.5" />
+                                                        S-Curve
                                                     </Link>
                                                     <Link
                                                         href={`/gantt?projectId=${project.id}`}
-                                                        className="p-1.5 hover:bg-blue-50 rounded text-gray-600 hover:text-blue-600 transition-colors"
+                                                        className="px-3 py-1.5 text-xs font-medium text-teal-700 bg-teal-50 border border-teal-200 rounded-md hover:bg-teal-100 transition-colors flex items-center gap-1.5"
                                                         title="Gantt Chart"
                                                     >
-                                                        <GanttChartSquare className="w-4 h-4" />
+                                                        <GanttChartSquare className="w-3.5 h-3.5" />
+                                                        Gantt
                                                     </Link>
                                                 </div>
                                             </td>

@@ -9,6 +9,16 @@ import { Project, Task } from '@/types/construction';
 import { getProjects, getTasks, updateTask, createTask } from '@/lib/firestore';
 import { format, differenceInDays, parseISO, addDays } from 'date-fns';
 
+const formatDateTH = (dateStr: string | Date | undefined | null) => {
+    if (!dateStr) return '-';
+    const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+    if (isNaN(date.getTime())) return '-';
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yearBE = (date.getFullYear() + 543).toString().slice(-2);
+    return `${day}/${month}/${yearBE}`;
+};
+
 export default function GanttPage() {
     const searchParams = useSearchParams();
     const projectParam = searchParams.get('project');
@@ -381,6 +391,9 @@ export default function GanttPage() {
             }
 
             const { addTask } = await import('@/lib/firestore');
+            const idMap: Record<string, string> = {};
+            let activeGroup: { id: string, category: string } | null = null;
+
             let count = 0;
             const currentMaxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : 0;
 
@@ -396,13 +409,58 @@ export default function GanttPage() {
                 // Parse Dates
                 const parseDate = (val: string) => {
                     if (!val || val === '-') return null;
+
+                    // Handle DD/MM/YYYY or D/M/YYYY
+                    if (val.includes('/')) {
+                        const parts = val.split('/');
+                        if (parts.length === 3) {
+                            // Assuming DD/MM/YYYY
+                            const day = parseInt(parts[0], 10);
+                            const month = parseInt(parts[1], 10);
+                            let year = parseInt(parts[2], 10);
+
+                            // Handle year if 2 digits? unlikely for 2026. Assuming 4 digits.
+                            // But just in case
+                            if (year < 100) year += 2000;
+
+                            if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                                return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            }
+                        }
+                    }
+
                     const d = new Date(val);
                     return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
                 };
 
-                const planStart = parseDate(row['Plan Start'] || row['Start']) || storageEndDate;
-                const planEnd = parseDate(row['Plan End'] || row['End']) || storageEndDate;
                 const duration = parseInt(row['Duration'] || row['Duration (Days)']) || 1;
+                let planStart = parseDate(row['Plan Start'] || row['Start']);
+                if (!planStart) planStart = format(new Date(), 'yyyy-MM-dd');
+
+                let planEnd = parseDate(row['Plan End'] || row['End']);
+                if (!planEnd) {
+                    // Calculate end date based on start date + duration
+                    const startDateParams = parseISO(planStart);
+                    const endDateParams = addDays(startDateParams, duration - 1);
+                    planEnd = format(endDateParams, 'yyyy-MM-dd');
+                }
+
+                const type = (row['Type']?.toLowerCase() === 'group' ? 'group' : 'task') as 'task' | 'group';
+                let parentId: string | undefined = undefined;
+
+                if (type === 'group') {
+                    parentId = undefined;
+                } else {
+                    if (activeGroup && activeGroup.category === category) {
+                        parentId = activeGroup.id;
+                    } else {
+                        activeGroup = null;
+                    }
+                }
+
+                if (row['Parent ID'] && idMap[row['Parent ID']]) {
+                    parentId = idMap[row['Parent ID']];
+                }
 
                 const newTaskId: string = await addTask({
                     projectId: selectedProjectId,
@@ -417,11 +475,18 @@ export default function GanttPage() {
                     progress: parseFloat(row['Progress'] || row['Progress (%)'] || '0') || 0,
                     status: 'not-started',
                     order: currentMaxOrder + count + 1,
-                    predecessors: lastTaskId ? [lastTaskId] : undefined
+                    type: type,
+                    parentTaskId: parentId,
+                    predecessors: (lastTaskId && type !== 'group') ? [lastTaskId] : undefined
                 });
 
-                // Update lastTaskId for the next iteration to chain dependencies
-                lastTaskId = newTaskId;
+                if (type !== 'group') {
+                    lastTaskId = newTaskId;
+                }
+
+                if (row['ID']) idMap[row['ID']] = newTaskId;
+                if (type === 'group') activeGroup = { id: newTaskId, category: category };
+
                 count++;
             }
 
@@ -442,6 +507,7 @@ export default function GanttPage() {
 
         const headers = [
             'Category',
+            'Type',
             'Task Name',
             'Plan Start',
             'Plan End',
@@ -458,6 +524,7 @@ export default function GanttPage() {
         const rows = tasks.map(task => {
             return [
                 `"${(task.category || '').replace(/"/g, '""')}"`,
+                task.type || 'task',
                 `"${(task.name || '').replace(/"/g, '""')}"`,
                 task.planStartDate,
                 task.planEndDate,
@@ -581,9 +648,9 @@ export default function GanttPage() {
                         <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 border border-blue-200 rounded-sm">
                             <span className="text-[10px] text-blue-600 font-bold uppercase">Period</span>
                             <span className="text-xs font-bold text-blue-800 font-mono">
-                                {selectedProject?.startDate ? format(parseISO(selectedProject.startDate), 'd MMM yy') : '-'}
-                                {' → '}
-                                {selectedProject?.endDate ? format(parseISO(selectedProject.endDate), 'd MMM yy') : '-'}
+                                {formatDateTH(selectedProject?.startDate)}
+                                {' - '}
+                                {formatDateTH(selectedProject?.endDate)}
                             </span>
                         </div>
                         <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-50 border border-gray-200 rounded-sm">
@@ -642,9 +709,15 @@ export default function GanttPage() {
                             : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'
                             }`}
                     >
-                        <Download className="w-4 h-4" />
                         Export CSV
                     </button>
+
+                    <Link
+                        href={`/projects/${selectedProjectId}`}
+                        className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-sm flex items-center gap-1.5 hover:bg-blue-100 transition-colors"
+                    >
+                        View Details →
+                    </Link>
                 </div>
             </div>
 
@@ -662,28 +735,7 @@ export default function GanttPage() {
                 />
             )}
 
-            {/* Quick Actions */}
-            <div className="flex items-center justify-between bg-white rounded-sm border border-gray-300 p-3 shadow-none">
-                <div className="text-xs text-gray-500 font-medium">
-                    {tasks.length > 0 ? (
-                        <span>
-                            Total {tasks.length} Items |
-                            Period: {selectedProject?.startDate} → {selectedProject?.endDate}
-                        </span>
-                    ) : (
-                        <span>No tasks available</span>
-                    )}
-                </div>
 
-                <div className="flex items-center gap-2">
-                    <Link
-                        href={`/projects/${selectedProjectId}`}
-                        className="px-3 py-1 text-xs font-semibold text-blue-600 hover:bg-blue-50 rounded-sm transition-colors"
-                    >
-                        View Details →
-                    </Link>
-                </div>
-            </div>
 
             {/* Add Task Modal */}
             {showAddTaskModal && (

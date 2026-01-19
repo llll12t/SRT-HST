@@ -24,14 +24,29 @@ import {
     ArrowUp,
     ArrowDown,
     ArrowRight,
-    Info
+    Info,
+    Download,
+    FolderKanban,
+    GripVertical
 } from 'lucide-react';
+import { format, parseISO, addDays, differenceInDays } from 'date-fns';
 import { Project, Task, Member } from '@/types/construction';
 import { getProject, updateProject, getTasks, createTask, updateTask, deleteTask, updateTaskProgress, getMembers } from '@/lib/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 
 
 
+
+
+const formatDateTH = (dateStr: string | undefined | null) => {
+    if (!dateStr) return '-';
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return '-';
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yearBE = (date.getFullYear() + 543).toString().slice(-2);
+    return `${day}/${month}/${yearBE}`;
+};
 
 export default function ProjectDetailPage() {
     const { user } = useAuth();
@@ -43,6 +58,7 @@ export default function ProjectDetailPage() {
     const [tasks, setTasks] = useState<Task[]>([]);
     const [members, setMembers] = useState<Member[]>([]);
     const [loading, setLoading] = useState(true);
+    const [importing, setImporting] = useState(false);
 
     // Task modal
     const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -80,6 +96,7 @@ export default function ProjectDetailPage() {
     });
     const [savingProgress, setSavingProgress] = useState(false);
     const [reorderingId, setReorderingId] = useState<string | null>(null);
+    const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
     // Color Picker State
     const COLORS = [
@@ -97,7 +114,7 @@ export default function ProjectDetailPage() {
 
     // Load category colors on mount
     useEffect(() => {
-        const savedColors = localStorage.getItem('ganttCategoryColors');
+        const savedColors = localStorage.getItem('gantt_category_colors');
         if (savedColors) {
             try {
                 setCategoryColors(JSON.parse(savedColors));
@@ -114,9 +131,9 @@ export default function ProjectDetailPage() {
         }
     }, [projectId]);
 
-    const fetchData = async () => {
+    const fetchData = async (silent = false) => {
         try {
-            setLoading(true);
+            if (!silent) setLoading(true);
             const [projectData, tasksData, membersData] = await Promise.all([
                 getProject(projectId),
                 getTasks(projectId),
@@ -128,7 +145,7 @@ export default function ProjectDetailPage() {
         } catch (error) {
             console.error('Error fetching data:', error);
         } finally {
-            setLoading(false);
+            if (!silent) setLoading(false);
         }
     };
 
@@ -141,6 +158,17 @@ export default function ProjectDetailPage() {
         totalDuration: tasks.reduce((sum, t) => sum + (Number(t.planDuration) || 0), 0),
         weightedProgress: tasks.reduce((sum, t) => sum + ((Number(t.planDuration) || 0) * (Number(t.progress) || 0) / 100), 0)
     };
+
+    // Group tasks by category - Moved up for access in handlers
+    const groupedTasks = React.useMemo(() => {
+        return tasks.reduce((acc, task) => {
+            if (!acc[task.category]) {
+                acc[task.category] = [];
+            }
+            acc[task.category].push(task);
+            return acc;
+        }, {} as Record<string, Task[]>);
+    }, [tasks]);
 
     const calculatedProgress = stats.totalDuration > 0
         ? (stats.weightedProgress / stats.totalDuration) * 100
@@ -221,16 +249,16 @@ export default function ProjectDetailPage() {
                     category: taskForm.category,
                     name: taskForm.name,
                     description: taskForm.description,
-                    cost: taskForm.cost,
-                    quantity: taskForm.quantity,
+                    cost: taskForm.type === 'group' ? 0 : taskForm.cost,
+                    quantity: taskForm.type === 'group' ? '' : taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
                     planEndDate: taskForm.planEndDate,
                     planDuration: taskForm.planDuration,
-                    progress: taskForm.progress,
-                    responsible: taskForm.responsible,
-                    actualStartDate: taskForm.actualStartDate || undefined,
-                    actualEndDate: taskForm.actualEndDate || undefined,
-                    status,
+                    progress: taskForm.type === 'group' ? 0 : taskForm.progress,
+                    responsible: taskForm.type === 'group' ? '' : taskForm.responsible,
+                    actualStartDate: taskForm.type === 'group' ? undefined : (taskForm.actualStartDate || undefined),
+                    actualEndDate: taskForm.type === 'group' ? undefined : (taskForm.actualEndDate || undefined),
+                    status: taskForm.type === 'group' ? 'not-started' : status,
                     type: taskForm.type as 'task' | 'group',
                     parentTaskId: taskForm.parentTaskId || null,
                     color: taskForm.color
@@ -244,16 +272,16 @@ export default function ProjectDetailPage() {
                     category: taskForm.category,
                     name: taskForm.name,
                     description: taskForm.description,
-                    cost: taskForm.cost,
-                    quantity: taskForm.quantity,
+                    cost: taskForm.type === 'group' ? 0 : taskForm.cost,
+                    quantity: taskForm.type === 'group' ? '' : taskForm.quantity,
                     planStartDate: taskForm.planStartDate,
                     planEndDate: taskForm.planEndDate,
                     planDuration: taskForm.planDuration,
-                    progress: taskForm.progress,
-                    responsible: taskForm.responsible,
-                    actualStartDate: taskForm.actualStartDate || undefined,
-                    actualEndDate: taskForm.actualEndDate || undefined,
-                    status,
+                    progress: taskForm.type === 'group' ? 0 : taskForm.progress,
+                    responsible: taskForm.type === 'group' ? '' : taskForm.responsible,
+                    actualStartDate: taskForm.type === 'group' ? undefined : (taskForm.actualStartDate || undefined),
+                    actualEndDate: taskForm.type === 'group' ? undefined : (taskForm.actualEndDate || undefined),
+                    status: taskForm.type === 'group' ? 'not-started' : status,
                     order: maxOrder + 1,
                     type: taskForm.type as 'task' | 'group',
                     parentTaskId: taskForm.parentTaskId || null,
@@ -271,6 +299,29 @@ export default function ProjectDetailPage() {
         }
     };
 
+    // Handle clear all tasks
+    const handleClearAllTasks = async () => {
+        if (tasks.length === 0) return;
+        if (!confirm('คุณแน่ใจหรือไม่ที่จะลบข้อมูลงานทั้งหมดในโครงการนี้? การกระทำนี้ไม่สามารถย้อนกลับได้')) return;
+
+        try {
+            setLoading(true);
+            // Delete in batches of 20 to avoid overwhelming the connection
+            const batchSize = 20;
+            for (let i = 0; i < tasks.length; i += batchSize) {
+                const batch = tasks.slice(i, i + batchSize);
+                await Promise.all(batch.map(t => deleteTask(t.id)));
+            }
+            await fetchData();
+            alert('ลบข้อมูลงานทั้งหมดเรียบร้อยแล้ว');
+        } catch (error) {
+            console.error('Error clearing tasks:', error);
+            alert('เกิดข้อผิดพลาดในการลบข้อมูล');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     // Handle task delete
     const handleDeleteTask = async (taskId: string) => {
         if (!confirm('ยืนยันการลบงานนี้?')) return;
@@ -283,28 +334,265 @@ export default function ProjectDetailPage() {
         }
     };
 
-    const handleMoveTask = async (task: Task, direction: 'up' | 'down', categoryTasks: Task[]) => {
-        const currentIndex = categoryTasks.findIndex(t => t.id === task.id);
-        if (currentIndex === -1) return;
+    // Drag and Drop State
+    const [dragState, setDragState] = useState<{
+        id: string;
+        type: 'category' | 'task';
+        data?: any;
+    } | null>(null);
 
-        const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-        if (targetIndex < 0 || targetIndex >= categoryTasks.length) return;
+    const handleDragStart = (e: React.DragEvent, id: string, type: 'category' | 'task', data?: any) => {
+        setDragState({ id, type, data });
+        e.dataTransfer.effectAllowed = 'move';
+        // Create ghost image if needed, or default
+    };
 
-        const targetTask = categoryTasks[targetIndex];
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = 'move';
+    };
 
-        setReorderingId(task.id);
+    const handleDropCategory = async (e: React.DragEvent, targetCategory: string) => {
+        e.preventDefault();
+        if (!dragState || dragState.type !== 'category' || dragState.id === targetCategory) return;
+
+        const draggedCategory = dragState.id;
+
+        // Calculate current sorted categories
+        const sortedCategories = Object.keys(groupedTasks).sort((a, b) => {
+            const minOrderA = Math.min(...groupedTasks[a].map(t => t.order || 0));
+            const minOrderB = Math.min(...groupedTasks[b].map(t => t.order || 0));
+            return minOrderA - minOrderB;
+        });
+
+        const fromIndex = sortedCategories.indexOf(draggedCategory);
+        const toIndex = sortedCategories.indexOf(targetCategory);
+
+        if (fromIndex === -1 || toIndex === -1) return;
+
+        // Optimistic Update
+        const newOrder = [...sortedCategories];
+        newOrder.splice(fromIndex, 1);
+        newOrder.splice(toIndex, 0, draggedCategory);
+
+        // We need to re-calculate orders for ALL tasks in the affected categories 
+        // to reflect this new block order immediately in UI
+        const optimisticTasks = [...tasks];
+        let currentOrderCounter = 1;
+
+        // This simulates the new order for UI
+        for (const cat of newOrder) {
+            const catTasks = optimisticTasks.filter(t => t.category === cat).sort((a, b) => (a.order || 0) - (b.order || 0));
+            for (const task of catTasks) {
+                task.order = currentOrderCounter++;
+            }
+        }
+
+        setTasks(optimisticTasks);
+        setProcessingIds(prev => new Set(prev).add(draggedCategory));
+        setDragState(null);
+
+        // Apply to backend
         try {
-            const taskOrder = task.order || 0;
-            const targetOrder = targetTask.order || 0;
+            const updates = [];
+            currentOrderCounter = 1;
 
-            await updateTask(task.id, { order: targetOrder });
-            await updateTask(targetTask.id, { order: taskOrder });
-            await fetchData();
+            for (const cat of newOrder) {
+                const catTasks = groupedTasks[cat].sort((a, b) => (a.order || 0) - (b.order || 0));
+                for (const task of catTasks) {
+                    updates.push(updateTask(task.id, { order: currentOrderCounter++ }));
+                }
+            }
+
+            await Promise.all(updates);
+            // Silent refetch to confirm
+            fetchData(true);
         } catch (error) {
-            console.error('Reorder failed', error);
-            alert('จัดลำดับไม่สำเร็จ');
+            console.error('Error reordering categories:', error);
+            alert('เกิดข้อผิดพลาดในการจัดลำดับหมวดหมู่');
+            fetchData(); // Revert on error
         } finally {
-            setReorderingId(null);
+            setProcessingIds(prev => {
+                const next = new Set(prev);
+                next.delete(draggedCategory);
+                return next;
+            });
+        }
+    };
+
+    const handleDropTask = async (e: React.DragEvent, targetTask: Task) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!dragState || dragState.type !== 'task' || dragState.id === targetTask.id) return;
+
+        const draggedTask = dragState.data as Task;
+
+        // Validation: Prevent dropping parent into its own descendant
+        let current = targetTask;
+        while (current.parentTaskId) {
+            if (current.parentTaskId === draggedTask.id) return;
+            const parent = tasks.find(t => t.id === current.parentTaskId);
+            if (!parent) break;
+            current = parent;
+        }
+
+        const sourceCategory = draggedTask.category;
+        const targetCategory = targetTask.category;
+
+        setProcessingIds(prev => new Set(prev).add(draggedTask.id));
+        setDragState(null);
+
+        try {
+            // Determine Goal: Nesting or Reordering?
+            // If dragging a Task onto a Group, we treat it as "Nest into Group"
+            // If dragging a Group onto a Group, we treat it as "Reorder Group" (Sibling)
+            const draggedType = draggedTask.type || 'task';
+            const targetType = targetTask.type || 'task';
+            const isNesting = draggedType === 'task' && targetType === 'group';
+
+            let newParentId: string | null;
+            let newOrder: number;
+
+            if (isNesting) {
+                // NESTING: Become a child of targetTask
+                newParentId = targetTask.id;
+                // Append to end of children
+                const siblings = tasks.filter(t => t.parentTaskId === newParentId);
+                const maxOrder = siblings.reduce((max, t) => Math.max(max, t.order || 0), 0);
+                newOrder = maxOrder + 1;
+            } else {
+                // REORDERING: Become a sibling of targetTask
+                newParentId = targetTask.parentTaskId || null; // Inherit parent
+                // Insert at specific position among siblings
+                // We need to fetch all siblings to adjust their orders
+                const siblings = tasks
+                    .filter(t => t.parentTaskId === newParentId && t.category === targetCategory) // Same parent contest
+                    .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+                // Find where target is
+                const targetIndex = siblings.findIndex(t => t.id === targetTask.id);
+                if (targetIndex === -1) {
+                    newOrder = 1; // Fallback
+                } else {
+                    // Start orders from a clean slate to avoid conflicts, or just shift?
+                    // Simple shift strategy:
+                    // If moving down: target index
+                    // If moving up: target index
+                    // Actually, let's just grab the order of target and use that, pushing target down?
+                    // We'll trust the backend reorder or do a full reindex of siblings.
+
+                    // Let's do a full reindex for safety
+                    // Remove dragged task from siblings list if it was there (same parent)
+                    const cleanSiblings = siblings.filter(t => t.id !== draggedTask.id);
+                    // Insert dragged task at target index
+                    // If we drop ON target, does it go before or after?
+                    // Standard: Before. 
+                    const insertIndex = cleanSiblings.findIndex(t => t.id === targetTask.id);
+                    // If not found (shouldn't happen), append
+                    const finalIndex = insertIndex !== -1 ? insertIndex : cleanSiblings.length;
+
+                    // We can't calculate exact order here easily without reindexing everyone.
+                    // Let's rely on assigning an order value that puts it there. 
+                    // Best way: calc new orders for EVERYONE in this sibling group.
+
+                    cleanSiblings.splice(finalIndex, 0, draggedTask); // Temporarily add to calculate index
+                    newOrder = finalIndex + 1; // 1-based index
+                }
+            }
+
+            // Perform Updates
+            // 1. Update the Dragged Task locally (Optimistic)
+            setTasks(prev => prev.map(t => {
+                if (t.id === draggedTask.id) {
+                    return {
+                        ...t,
+                        category: targetCategory,
+                        parentTaskId: newParentId,
+                        order: newOrder
+                    };
+                }
+                return t;
+            }));
+
+            // 2. Expand the group if we nested into it
+            if (isNesting) {
+                setCollapsedTasks(prev => {
+                    const next = new Set(prev);
+                    next.delete(targetTask.id);
+                    return next;
+                });
+            }
+
+            // 3. Backend Updates
+            // We need to update:
+            // a) The dragged task (parent, category, order)
+            // b) Sibling reordering if needed.
+
+            // To keep it simple and robust:
+            // Just update the dragged task first.
+            await updateTask(draggedTask.id, {
+                category: targetCategory,
+                parentTaskId: newParentId,
+                order: newOrder
+            });
+
+            // If it was valid reordering, we technically should re-normalize orders for all siblings 
+            // to ensure no gaps or duplicates, but 'order' is float or just sort key? 
+            // Code uses int. Let's do a re-normalization for the TARGET sibling group to be clean.
+
+            const finalSiblings = tasks
+                .filter(t => t.parentTaskId === newParentId && t.category === targetCategory) // Refresh from state? state is optimistic
+                .map(t => t.id === draggedTask.id ? { ...t, order: newOrder, category: targetCategory, parentTaskId: newParentId } : t) // Ensure updated
+                .sort((a, b) => {
+                    // Sort by order, but force dragged item to its new place if duplicate?
+                    // Actually, if we just updated draggedTask order, and didn't touch others, 
+                    // a collision (duplicate order) might occur if we just guessed.
+                    // The logic above 'newOrder' was loose.
+
+                    // BETTER STRATEGY: Rerank ALL siblings.
+                    return (a.order || 0) - (b.order || 0);
+                });
+
+            // Re-insertion in sorted array logic
+            // Exclude dragged, Re-insert at Target Index, Save All.
+
+            // 1. Get raw siblings ignoring dragged
+            const rawSiblings = tasks.filter(t => t.parentTaskId === newParentId && t.category === targetCategory && t.id !== draggedTask.id)
+                .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            // 2. Find insertion point
+            let insertIdx = rawSiblings.findIndex(t => t.id === targetTask.id);
+            if (isNesting) insertIdx = rawSiblings.length; // Append
+            else if (insertIdx === -1) insertIdx = 0; // Fallback
+
+            // 3. Construct new list
+            const newList = [...rawSiblings];
+            if (!isNesting) newList.splice(insertIdx, 0, draggedTask);
+            else newList.push(draggedTask); // Should already be 'draggedTask' with updated fields? No, use the object.
+
+            // 4. Batch Update Orders
+            const reorderUpdates = newList.map((t, idx) =>
+                updateTask(t.id, {
+                    order: idx + 1,
+                    category: targetCategory, // ensure cat sync
+                    parentTaskId: newParentId // ensure parent sync
+                })
+            );
+
+            await Promise.all(reorderUpdates);
+            fetchData(true);
+
+        } catch (error) {
+            console.error('Error reordering tasks:', error);
+            alert('จัดลำดับไม่สำเร็จ');
+            fetchData();
+        } finally {
+            setProcessingIds(prev => {
+                const next = new Set(prev);
+                next.delete(draggedTask.id);
+                return next;
+            });
         }
     };
 
@@ -400,20 +688,217 @@ export default function ProjectDetailPage() {
         } else if (activeColorMenu.type === 'category') {
             const newColors = { ...categoryColors, [activeColorMenu.id]: color };
             setCategoryColors(newColors);
-            localStorage.setItem('ganttCategoryColors', JSON.stringify(newColors));
+            localStorage.setItem('gantt_category_colors', JSON.stringify(newColors));
         }
 
         setActiveColorMenu(null);
     };
 
-    // Group tasks by category
-    const groupedTasks = tasks.reduce((acc, task) => {
-        if (!acc[task.category]) {
-            acc[task.category] = [];
+    // Handle Import File
+    const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !projectId) return;
+
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+            alert('กรุณาเลือกไฟล์ CSV เท่านั้น');
+            e.target.value = '';
+            return;
         }
-        acc[task.category].push(task);
-        return acc;
-    }, {} as Record<string, Task[]>);
+
+        if (!confirm(`ต้องการนำเข้าข้อมูลงานไปยังโครงการ "${project?.name}" หรือไม่?`)) {
+            e.target.value = '';
+            return;
+        }
+
+        setImporting(true);
+        try {
+            const text = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target?.result as string);
+                reader.onerror = reject;
+                reader.readAsText(file, 'UTF-8');
+            });
+
+            const lines = text.split(/\r?\n/).filter(line => line.trim());
+            if (lines.length < 2) throw new Error('File is empty');
+
+            const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+            const data = [];
+
+            for (let i = 1; i < lines.length; i++) {
+                const row: string[] = [];
+                let inQuotes = false;
+                let currentValue = '';
+                const line = lines[i];
+
+                for (let j = 0; j < line.length; j++) {
+                    const char = line[j];
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        row.push(currentValue.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+                        currentValue = '';
+                    } else {
+                        currentValue += char;
+                    }
+                }
+                row.push(currentValue.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
+
+                const rowObj: any = {};
+                headers.forEach((h, idx) => rowObj[h] = row[idx] || '');
+                data.push(rowObj);
+            }
+
+            // Dynamically import addTask to match Gantt logic
+            const { addTask } = await import('@/lib/firestore');
+            const idMap: Record<string, string> = {}; // Map Old ID -> New ID
+
+            // State for "Simple Mode" inference (Group Context)
+            let activeGroup: { id: string, category: string } | null = null;
+
+            let count = 0;
+            const currentMaxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : 0;
+            let lastTaskId: string | null = tasks.length > 0 ? tasks[tasks.length - 1].id : null;
+
+            for (const row of data) {
+                const name = row['Task Name'] || row['Task'] || row['Name'] || row['name'];
+                if (!name) continue;
+
+                const category = row['Category'] || 'Imported';
+
+                const parseDate = (val: string) => {
+                    if (!val || val === '-') return null;
+                    if (val.includes('/')) {
+                        const parts = val.split('/');
+                        if (parts.length === 3) {
+                            const day = parseInt(parts[0], 10);
+                            const month = parseInt(parts[1], 10);
+                            let year = parseInt(parts[2], 10);
+                            if (year < 100) year += 2000;
+                            if (!isNaN(day) && !isNaN(month) && !isNaN(year)) {
+                                return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                            }
+                        }
+                    }
+                    const d = new Date(val);
+                    return isNaN(d.getTime()) ? null : d.toISOString().split('T')[0];
+                };
+
+                const duration = parseInt(row['Duration'] || row['Duration (Days)']) || 1;
+                let planStart = parseDate(row['Plan Start'] || row['Start']);
+                if (!planStart) planStart = format(new Date(), 'yyyy-MM-dd');
+
+                let planEnd = parseDate(row['Plan End'] || row['End']);
+                if (!planEnd) {
+                    const startDateParams = parseISO(planStart);
+                    const endDateParams = addDays(startDateParams, duration - 1);
+                    planEnd = format(endDateParams, 'yyyy-MM-dd');
+                }
+
+                const type = (row['Type']?.toLowerCase() === 'group' ? 'group' : 'task') as 'task' | 'group';
+                let parentId: string | undefined = undefined;
+
+                if (type === 'group') {
+                    // Start of a new group
+                    // currentGroupId will be set AFTER creation
+                    parentId = undefined;
+                } else {
+                    // It's a task. Should it be nested?
+                    // If we are in a "Context" (activeGroup) AND the category matches, nest it.
+                    if (activeGroup && activeGroup.category === category) {
+                        parentId = activeGroup.id;
+                    } else {
+                        // Category changed or no active group -> Reset context
+                        activeGroup = null;
+                    }
+                }
+
+                // Fallback: If explicit Parent ID is provided (Advanced Mode), use it
+                if (row['Parent ID'] && idMap[row['Parent ID']]) {
+                    parentId = idMap[row['Parent ID']];
+                }
+
+                const newTaskId: string = await addTask({
+                    projectId: projectId,
+                    name,
+                    category,
+                    planStartDate: planStart,
+                    planEndDate: planEnd,
+                    planDuration: duration,
+                    cost: parseFloat(row['Cost'] || '0') || 0,
+                    quantity: row['Quantity'] || undefined,
+                    responsible: row['Responsible'] || undefined,
+                    progress: parseFloat(row['Progress'] || row['Progress (%)'] || '0') || 0,
+                    status: 'not-started',
+                    order: currentMaxOrder + count + 1,
+                    type: type,
+                    parentTaskId: parentId,
+                    predecessors: (lastTaskId && type !== 'group') ? [lastTaskId] : undefined
+                });
+
+                if (type !== 'group') {
+                    lastTaskId = newTaskId;
+                }
+                if (row['ID']) idMap[row['ID']] = newTaskId;
+
+                // Update Context
+                if (type === 'group') {
+                    activeGroup = { id: newTaskId, category: category };
+                }
+
+                count++;
+            }
+
+            alert(`นำเข้าข้อมูลสำเร็จ ${count} รายการ`);
+            fetchData();
+        } catch (error) {
+            console.error('Import error:', error);
+            alert('เกิดข้อผิดพลาดในการนำเข้าไฟล์');
+        } finally {
+            setImporting(false);
+            e.target.value = '';
+        }
+    };
+
+    // Handle Export
+    const handleExport = () => {
+        if (tasks.length === 0) return;
+
+        const headers = [
+            'Category', 'Type', 'Task Name', 'Plan Start', 'Plan End', 'Duration (Days)',
+            'Cost', 'Quantity', 'Responsible', 'Progress (%)', 'Status',
+            'Actual Start', 'Actual End'
+        ];
+
+        const rows = tasks.map(task => {
+            return [
+                `"${(task.category || '').replace(/"/g, '""')}"`,
+                task.type || 'task',
+                `"${(task.name || '').replace(/"/g, '""')}"`,
+                task.planStartDate,
+                task.planEndDate,
+                task.planDuration || 0,
+                task.cost || 0,
+                `"${(task.quantity || '').replace(/"/g, '""')}"`,
+                `"${(task.responsible || '').replace(/"/g, '""')}"`,
+                task.progress || 0,
+                task.status || 'not-started',
+                task.actualStartDate || '-',
+                task.actualEndDate || '-'
+            ].join(',');
+        });
+
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `project_export_${project?.name || 'project'}_${format(new Date(), 'yyyyMMdd_HHmm')}.csv`;
+        link.click();
+        URL.revokeObjectURL(url);
+    };
+
+
 
     if (loading) {
         return (
@@ -455,7 +940,7 @@ export default function ProjectDetailPage() {
                             </span>
                         </div>
                         <p className="text-gray-600 text-sm mt-1">
-                            {project.owner} • {project.startDate} → {project.endDate}
+                            {project.owner} • {formatDateTH(project.startDate)} - {formatDateTH(project.endDate)}
                         </p>
                     </div>
                 </div>
@@ -468,6 +953,29 @@ export default function ProjectDetailPage() {
                         <BarChart3 className="w-4 h-4" />
                         Gantt Chart
                     </Link>
+
+                    {/* Import/Export Buttons */}
+                    {['admin', 'project_manager'].includes(user?.role || '') && (
+                        <>
+                            <label className={`px-3 py-2 text-sm font-medium border rounded-lg flex items-center gap-2 transition-colors cursor-pointer ${importing ? 'bg-gray-100 text-gray-400' : 'bg-white border-gray-200 text-blue-600 hover:bg-blue-50'}`}>
+                                {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderKanban className="w-4 h-4" />}
+                                Import
+                                <input type="file" accept=".csv" className="hidden" onChange={handleImportFile} disabled={importing} />
+                            </label>
+
+                            <button
+                                onClick={handleExport}
+                                disabled={tasks.length === 0}
+                                className={`px-3 py-2 text-sm font-medium border rounded-lg flex items-center gap-2 transition-colors ${tasks.length === 0
+                                    ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                                    : 'text-gray-700 bg-white border-gray-200 hover:bg-gray-50'
+                                    }`}
+                            >
+                                <Download className="w-4 h-4" />
+                                Export CSV
+                            </button>
+                        </>
+                    )}
                     {['admin', 'project_manager'].includes(user?.role || '') && (
                         <button
                             onClick={openCreateTaskModal}
@@ -544,6 +1052,15 @@ export default function ProjectDetailPage() {
                         <h2 className="font-semibold text-gray-900">รายการงาน</h2>
                         <p className="text-gray-600 text-sm mt-0.5">จำนวน: {tasks.length} งาน</p>
                     </div>
+                    {tasks.length > 0 && ['admin', 'project_manager'].includes(user?.role || '') && (
+                        <button
+                            onClick={handleClearAllTasks}
+                            className="px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors flex items-center gap-1.5"
+                        >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            ล้างข้อมูลทั้งหมด
+                        </button>
+                    )}
                 </div>
 
                 {tasks.length === 0 ? (
@@ -562,7 +1079,13 @@ export default function ProjectDetailPage() {
                 ) : (
                     <div className="space-y-4">
                         {/* Hierarchical Tasks List */}
-                        {Object.entries(groupedTasks).map(([category, categoryTasks]) => {
+                        {Object.keys(groupedTasks).sort((a, b) => {
+                            const minOrderA = Math.min(...groupedTasks[a].map(t => t.order || 0));
+                            const minOrderB = Math.min(...groupedTasks[b].map(t => t.order || 0));
+                            return minOrderA - minOrderB;
+                        }).map((category) => {
+                            const categoryTasks = groupedTasks[category];
+
                             // Get root tasks for this category (no parent, or parent not in this category)
                             const rootTasks = categoryTasks
                                 .filter(t => !t.parentTaskId || !categoryTasks.find(p => p.id === t.parentTaskId))
@@ -578,12 +1101,49 @@ export default function ProjectDetailPage() {
                                 const isGroup = task.type === 'group';
                                 const isCollapsed = collapsedTasks.has(task.id);
 
+                                // Dynamic Group Dates Calculation
+                                let displayStartDate = task.planStartDate;
+                                let displayEndDate = task.planEndDate;
+                                let displayActualStartDate = task.actualStartDate;
+                                let displayActualEndDate = task.actualEndDate;
+                                let hasLeaves = false;
+
+                                if (isGroup) {
+                                    const getDescendants = (pid: string): Task[] => {
+                                        const direct = categoryTasks.filter(c => c.parentTaskId === pid);
+                                        let all = [...direct];
+                                        direct.forEach(d => all.push(...getDescendants(d.id)));
+                                        return all;
+                                    };
+                                    const leaves = getDescendants(task.id).filter(t => t.type !== 'group');
+                                    hasLeaves = leaves.length > 0;
+
+                                    if (hasLeaves) {
+                                        // Plan Dates
+                                        const validStarts = leaves.map(t => t.planStartDate).filter(Boolean).sort();
+                                        const validEnds = leaves.map(t => t.planEndDate).filter(Boolean).sort();
+                                        if (validStarts.length > 0) displayStartDate = validStarts[0];
+                                        if (validEnds.length > 0) displayEndDate = validEnds[validEnds.length - 1];
+
+                                        // Actual Dates (Optional but consistent)
+                                        const validActualStarts = leaves.map(t => t.actualStartDate).filter(Boolean).sort();
+                                        const validActualEnds = leaves.map(t => t.actualEndDate).filter(Boolean).sort();
+
+                                        if (validActualStarts.length > 0) displayActualStartDate = validActualStarts[0];
+                                        // For Actual End, usually strictly max of COMPLETED tasks? 
+                                        // But here we'll just take max of whatever is set to match 'Range' concept.
+                                        if (validActualEnds.length > 0) displayActualEndDate = validActualEnds[validActualEnds.length - 1];
+                                    }
+                                }
+
                                 return (
                                     <React.Fragment key={task.id}>
                                         <div
                                             className={`grid grid-cols-12 gap-4 px-5 py-3 hover:bg-gray-50 transition-colors items-center group/row relative
-                                                ${isGroup ? 'bg-gray-50/50' : ''}`}
+                                            ${isGroup ? 'bg-gray-50/50' : ''} ${processingIds.has(task.id) ? 'bg-blue-50 animate-pulse' : ''}`}
                                             style={{ backgroundColor: task.type === 'group' && task.color ? `${task.color}15` : undefined }}
+                                            onDragOver={handleDragOver}
+                                            onDrop={(e) => handleDropTask(e, task)}
                                         >
                                             {/* Col 1: Title & Hierarchy */}
                                             <div className="col-span-12 lg:col-span-5 min-w-0 flex items-center">
@@ -644,52 +1204,71 @@ export default function ProjectDetailPage() {
                                                         )}
                                                         <p className={`text-sm truncate ${isGroup ? 'font-bold text-gray-900 text-base' : 'font-medium text-gray-700'}`} title={task.name}>
                                                             {task.name}
+                                                            {isGroup && hasLeaves && (
+                                                                <span className="text-[10px] text-blue-600 font-normal font-mono ml-2">
+                                                                    (autoupdate {formatDateTH(displayStartDate)} - {formatDateTH(displayEndDate)})
+                                                                </span>
+                                                            )}
                                                         </p>
-                                                        <span className={`badge ${getStatusConfig(task.status).class} shrink-0 scale-90`}>
-                                                            {getStatusConfig(task.status).label}
-                                                        </span>
+                                                        {!isGroup && (
+                                                            <span className={`badge ${getStatusConfig(task.status).class} shrink-0 scale-90`}>
+                                                                {getStatusConfig(task.status).label}
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    <div className="flex items-center gap-3 text-xs text-gray-500 pl-4">
-                                                        {(task.cost ?? 0) > 0 && <span>Cost: {task.cost?.toLocaleString()}</span>}
-                                                        {task.quantity && <span>Qty: {task.quantity}</span>}
-                                                        {task.responsible && <span className="truncate max-w-[100px]" title={task.responsible}>โดย: {task.responsible}</span>}
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Col 2: Dates */}
-                                            <div className="col-span-6 lg:col-span-3 text-xs pl-2 lg:border-l border-gray-100 flex flex-col justify-center h-full">
-                                                <div className="flex flex-col gap-1.5">
-                                                    <div className="flex items-center gap-2 text-gray-500">
-                                                        <span className="w-8 shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50 px-1 rounded">Plan</span>
-                                                        <span className="font-mono">{new Date(task.planStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {new Date(task.planEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
-                                                    </div>
-                                                    {task.actualStartDate && (
-                                                        <div className="flex items-center gap-2 text-green-700 font-medium">
-                                                            <span className="w-8 shrink-0 text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-1 rounded">Real</span>
-                                                            <span className="font-mono">{new Date(task.actualStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {task.actualEndDate ? new Date(task.actualEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '...'}</span>
+                                                    {!isGroup && (
+                                                        <div className="flex items-center gap-3 text-xs text-gray-500 pl-4">
+                                                            {(task.cost ?? 0) > 0 && <span>Cost: {task.cost?.toLocaleString()}</span>}
+                                                            {task.quantity && <span>Qty: {task.quantity}</span>}
+                                                            {task.responsible && <span className="truncate max-w-[100px]" title={task.responsible}>โดย: {task.responsible}</span>}
                                                         </div>
                                                     )}
                                                 </div>
                                             </div>
 
+                                            {/* Col 2: Dates */}
+                                            <div className="col-span-6 lg:col-span-3 text-xs pl-2 lg:border-l border-gray-100 flex flex-col justify-center h-full">
+                                                {!isGroup && (
+                                                    <div className="flex flex-col gap-1.5">
+                                                        <div className="flex items-center gap-2 text-gray-500">
+                                                            <span className="w-8 shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-400 bg-gray-50 px-1 rounded">Plan</span>
+                                                            <span className="font-mono text-gray-700">
+                                                                {formatDateTH(displayStartDate)} - {formatDateTH(displayEndDate)}
+                                                            </span>
+                                                        </div>
+                                                        {displayActualStartDate && (
+                                                            <div className="flex items-center gap-2 text-green-700 font-medium">
+                                                                <span className="w-8 shrink-0 text-[10px] font-bold uppercase tracking-wider text-green-600 bg-green-50 px-1 rounded">Real</span>
+                                                                <span className="font-mono text-green-700">
+                                                                    {formatDateTH(displayActualStartDate)} - {displayActualEndDate ? formatDateTH(displayActualEndDate) : '...'}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+
                                             {/* Col 3: Progress */}
                                             <div className="col-span-4 lg:col-span-2 px-2 flex flex-col justify-center h-full">
-                                                <div className="flex items-center justify-between text-xs mb-1.5">
-                                                    <span className="text-gray-400 text-[10px] font-bold uppercase">Progress</span>
-                                                    <span className={`font-bold font-mono ${task.progress === 100 ? 'text-green-600' : 'text-gray-700'
-                                                        }`}>{task.progress}%</span>
-                                                </div>
-                                                <div className="h-2 bg-gray-100 rounded-full overflow-hidden border border-gray-100">
-                                                    <div
-                                                        className={`h-full rounded-full transition-all duration-500 ${task.progress === 100 ? 'bg-green-500' :
-                                                            task.progress >= 50 ? 'bg-blue-500' :
-                                                                task.progress > 0 ? 'bg-amber-500' :
-                                                                    'bg-gray-300'
-                                                            }`}
-                                                        style={{ width: `${task.progress}%` }}
-                                                    />
-                                                </div>
+                                                {!isGroup && (
+                                                    <>
+                                                        <div className="flex items-center justify-between text-xs mb-1.5">
+                                                            <span className="text-gray-400 text-[10px] font-bold uppercase">Progress</span>
+                                                            <span className={`font-bold font-mono ${task.progress === 100 ? 'text-green-600' : 'text-gray-700'
+                                                                }`}>{task.progress}%</span>
+                                                        </div>
+                                                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden border border-gray-100">
+                                                            <div
+                                                                className={`h-full rounded-full transition-all duration-500 ${task.progress === 100 ? 'bg-green-500' :
+                                                                    task.progress >= 50 ? 'bg-blue-500' :
+                                                                        task.progress > 0 ? 'bg-amber-500' :
+                                                                            'bg-gray-300'
+                                                                    }`}
+                                                                style={{ width: `${task.progress}%` }}
+                                                            />
+                                                        </div>
+                                                    </>
+                                                )}
                                             </div>
 
                                             {/* Col 4: Actions */}
@@ -704,6 +1283,7 @@ export default function ProjectDetailPage() {
                                                     </button>
                                                 )}
 
+                                                {/* Edit/Delete/Reorder */}
                                                 {/* Edit/Delete/Reorder */}
                                                 <div className="flex items-center opacity-0 group-hover/row:opacity-100 transition-opacity">
                                                     {['admin', 'project_manager'].includes(user?.role || '') && (
@@ -721,25 +1301,20 @@ export default function ProjectDetailPage() {
                                                                 <Trash2 className="w-4 h-4" />
                                                             </button>
 
-                                                            {/* Reorder Buttons */}
-                                                            {reorderingId === task.id ? (
-                                                                <Loader2 className="w-4 h-4 ml-1 text-blue-600 animate-spin" />
-                                                            ) : (
-                                                                <div className="flex flex-col ml-1 border-l border-gray-300 pl-1">
-                                                                    <button
-                                                                        onClick={() => handleMoveTask(task, 'up', categoryTasks)}
-                                                                        className="p-0.5 hover:bg-gray-200 rounded text-gray-400 hover:text-blue-600"
-                                                                    >
-                                                                        <ArrowUp className="w-3 h-3" />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleMoveTask(task, 'down', categoryTasks)}
-                                                                        className="p-0.5 hover:bg-gray-200 rounded text-gray-400 hover:text-blue-600"
-                                                                    >
-                                                                        <ArrowDown className="w-3 h-3" />
-                                                                    </button>
-                                                                </div>
-                                                            )}
+                                                            {/* Drag Handle */}
+                                                            <div
+                                                                draggable
+                                                                onDragStart={(e) => handleDragStart(e, task.id, 'task', task)}
+                                                                onDragOver={handleDragOver}
+                                                                onDrop={(e) => handleDropTask(e, task)}
+                                                                className="p-1.5 cursor-move hover:bg-gray-200 rounded-md text-gray-400 hover:text-blue-600 transition-colors ml-1"
+                                                            >
+                                                                {processingIds.has(task.id) ? (
+                                                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                                                ) : (
+                                                                    <GripVertical className="w-4 h-4" />
+                                                                )}
+                                                            </div>
                                                         </>
                                                     )}
                                                 </div>
@@ -757,26 +1332,60 @@ export default function ProjectDetailPage() {
                             return (
                                 <div key={category} className="bg-white border border-gray-100 rounded-lg overflow-hidden">
                                     {/* Category Header */}
-                                    <div className="bg-gray-50/50 px-4 py-3 flex items-center gap-3 border-b border-gray-100 backdrop-blur-sm">
-                                        <button
-                                            className="w-5 h-5 rounded-full border-2 border-white ring-1 ring-gray-100 hover:scale-110 transition-transform focus:outline-none"
-                                            style={{ backgroundColor: categoryColors[category] || '#9ca3af' }}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                setActiveColorMenu({
-                                                    id: category,
-                                                    type: 'category',
-                                                    top: rect.bottom + window.scrollY,
-                                                    left: rect.left + window.scrollX
-                                                });
-                                            }}
-                                            title="เปลี่ยนสีหมวดหมู่"
-                                        />
-                                        <h3 className="font-bold text-gray-900 text-sm tracking-tight">{category}</h3>
-                                        <span className="text-[10px] font-medium text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-100">
-                                            {categoryTasks.length} รายการ
-                                        </span>
+                                    <div
+                                        className={`bg-gray-50/50 px-4 py-3 flex items-center justify-between border-b border-gray-100 backdrop-blur-sm group/category 
+                                        ${dragState?.type === 'category' ? 'border-dashed border-2 border-blue-200' : ''}
+                                        ${processingIds.has(category) ? 'bg-blue-50 animate-pulse' : ''}`}
+                                        onDragOver={handleDragOver}
+                                        onDrop={(e) => handleDropCategory(e, category)}
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                className="w-5 h-5 rounded-full border-2 border-white ring-1 ring-gray-100 hover:scale-110 transition-transform focus:outline-none"
+                                                style={{ backgroundColor: categoryColors[category] || '#9ca3af' }}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                    setActiveColorMenu({
+                                                        id: category,
+                                                        type: 'category',
+                                                        top: rect.bottom + window.scrollY,
+                                                        left: rect.left + window.scrollX
+                                                    });
+                                                }}
+                                                title="เปลี่ยนสีหมวดหมู่"
+                                            />
+                                            <h3 className="font-bold text-gray-900 text-sm tracking-tight">{category}</h3>
+                                            <span className="text-[10px] font-medium text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-100">
+                                                {categoryTasks.length} รายการ
+                                            </span>
+                                            {(() => {
+                                                const leaves = categoryTasks.filter(t => t.type !== 'group');
+                                                const catStarts = leaves.map(t => t.planStartDate).filter(Boolean).sort();
+                                                const catEnds = leaves.map(t => t.planEndDate).filter(Boolean).sort();
+                                                const catStart = catStarts.length > 0 ? catStarts[0] : null;
+                                                const catEnd = catEnds.length > 0 ? catEnds[catEnds.length - 1] : null;
+                                                if (catStart && catEnd) {
+                                                    return (
+                                                        <span className="text-xs text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-full ml-2">
+                                                            (autoupdate {formatDateTH(catStart)} - {formatDateTH(catEnd)})
+                                                        </span>
+                                                    );
+                                                }
+                                                return null;
+                                            })()}
+                                        </div>
+
+                                        {/* Category Reorder Handle */}
+                                        {['admin', 'project_manager'].includes(user?.role || '') && (
+                                            <div
+                                                draggable
+                                                onDragStart={(e) => handleDragStart(e, category, 'category')}
+                                                className="flex items-center gap-1 opacity-0 group-hover/category:opacity-100 transition-opacity cursor-move p-1 text-gray-400 hover:text-blue-600"
+                                            >
+                                                <GripVertical className="w-4 h-4" />
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Render Root Tasks */}
@@ -964,22 +1573,24 @@ export default function ProjectDetailPage() {
                                         </div>
                                     </>
                                 )}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">ผู้รับผิดชอบ</label>
-                                    <input
-                                        type="text"
-                                        list="member-list"
-                                        value={taskForm.responsible}
-                                        onChange={(e) => setTaskForm({ ...taskForm, responsible: e.target.value })}
-                                        placeholder="เลือกหรือพิมพ์ชื่อผู้รับผิดชอบ..."
-                                        className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
-                                    />
-                                    <datalist id="member-list">
-                                        {members.map((member) => (
-                                            <option key={member.id} value={member.name}>{member.name} ({member.role})</option>
-                                        ))}
-                                    </datalist>
-                                </div>
+                                {taskForm.type !== 'group' && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">ผู้รับผิดชอบ</label>
+                                        <input
+                                            type="text"
+                                            list="member-list"
+                                            value={taskForm.responsible}
+                                            onChange={(e) => setTaskForm({ ...taskForm, responsible: e.target.value })}
+                                            placeholder="เลือกหรือพิมพ์ชื่อผู้รับผิดชอบ..."
+                                            className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-blue-500"
+                                        />
+                                        <datalist id="member-list">
+                                            {members.map((member) => (
+                                                <option key={member.id} value={member.name}>{member.name} ({member.role})</option>
+                                            ))}
+                                        </datalist>
+                                    </div>
+                                )}
 
                                 {taskForm.type !== 'group' && (
                                     <div className="md:col-span-3 pt-6 border-t border-gray-200">
