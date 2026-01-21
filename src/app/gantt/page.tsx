@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import GanttChart from '@/components/charts/GanttChart';
 import { Download, Calendar, Loader2, FolderKanban, Plus, X, Save } from 'lucide-react';
 import Link from 'next/link';
 import { Project, Task } from '@/types/construction';
-import { getProjects, getTasks, updateTask, createTask } from '@/lib/firestore';
+import { getProjects, getTasks, updateTask, createTask, addTask } from '@/lib/firestore';
 import { format, differenceInDays, parseISO, addDays } from 'date-fns';
 
 const formatDateTH = (dateStr: string | Date | undefined | null) => {
@@ -65,9 +65,37 @@ export default function GanttPage() {
     // Get unique categories from existing tasks
     const existingCategories = [...new Set(tasks.map(t => t.category))].filter(Boolean);
 
+    // Define fetch functions FIRST (useCallback)
+    const fetchProjects = useCallback(async () => {
+        try {
+            setLoading(true);
+            const projectsData = await getProjects();
+            setProjects(projectsData);
+
+            if (projectsData.length > 0 && !projectParam) {
+                setSelectedProjectId(projectsData[0].id);
+            }
+        } catch (error) {
+            console.error('Error fetching projects:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, [projectParam]);
+
+    const fetchTasks = useCallback(async () => {
+        try {
+            if (!selectedProjectId) return;
+            const tasksData = await getTasks(selectedProjectId);
+            setTasks(tasksData);
+        } catch (error) {
+            console.error('Error fetching tasks:', error);
+        }
+    }, [selectedProjectId]);
+
+    // THEN use them in useEffect
     useEffect(() => {
         fetchProjects();
-    }, []);
+    }, [fetchProjects]);
 
     useEffect(() => {
         if (projectParam && projects.length > 0) {
@@ -122,7 +150,7 @@ export default function GanttPage() {
             else if (isStartingWork) newStatus = 'in-progress';
             // If 0 and not starting work, default to 'not-started' (Reset)
 
-            const updateData: any = {
+            const updateData: Partial<Task> = {
                 progress: actualProgress,
                 progressUpdatedAt: progressUpdate.updateDate,
                 status: newStatus
@@ -172,7 +200,7 @@ export default function GanttPage() {
         if (selectedProjectId) {
             fetchTasks();
         }
-    }, [selectedProjectId]);
+    }, [selectedProjectId, fetchTasks]);
 
     // Handle opening modal for subtask
     const handleAddSubTask = (parentId: string) => {
@@ -241,7 +269,6 @@ export default function GanttPage() {
 
         setSaving(true);
         try {
-            const { createTask } = await import('@/lib/firestore');
             const planDuration = Math.max(1, parseInt(newTask.duration) || 1);
             const currentMaxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : 0;
 
@@ -307,32 +334,6 @@ export default function GanttPage() {
         }
     };
 
-    const fetchProjects = async () => {
-        try {
-            setLoading(true);
-            const projectsData = await getProjects();
-            setProjects(projectsData);
-
-            if (projectsData.length > 0 && !projectParam) {
-                setSelectedProjectId(projectsData[0].id);
-            }
-        } catch (error) {
-            console.error('Error fetching projects:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const fetchTasks = async () => {
-        try {
-            if (!selectedProjectId) return;
-            const tasksData = await getTasks(selectedProjectId);
-            setTasks(tasksData);
-        } catch (error) {
-            console.error('Error fetching tasks:', error);
-        }
-    };
-
     const selectedProject = projects.find(p => p.id === selectedProjectId);
 
     const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -390,7 +391,6 @@ export default function GanttPage() {
                 data.push(rowObj);
             }
 
-            const { addTask } = await import('@/lib/firestore');
             const idMap: Record<string, string> = {};
             let activeGroup: { id: string, category: string } | null = null;
 
@@ -506,6 +506,8 @@ export default function GanttPage() {
         if (tasks.length === 0) return;
 
         const headers = [
+            'ID',
+            'Parent ID',
             'Category',
             'Type',
             'Task Name',
@@ -523,6 +525,8 @@ export default function GanttPage() {
 
         const rows = tasks.map(task => {
             return [
+                task.id,
+                task.parentTaskId || '',
                 `"${(task.category || '').replace(/"/g, '""')}"`,
                 task.type || 'task',
                 `"${(task.name || '').replace(/"/g, '""')}"`,

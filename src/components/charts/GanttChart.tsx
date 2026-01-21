@@ -21,6 +21,7 @@ import { ViewMode, DragState, RowDragState } from './gantt/types';
 import GanttToolbar from './gantt/GanttToolbar';
 import TimelineHeader from './gantt/TimelineHeader';
 import SCurveOverlay from './gantt/SCurveOverlay';
+import { usePdfExport } from '@/hooks/usePdfExport';
 
 interface GanttChartProps {
     tasks: Task[];
@@ -131,7 +132,6 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
     const [currentDate, setCurrentDate] = useState(new Date());
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
     const [collapsedTasks, setCollapsedTasks] = useState<Set<string>>(new Set()); // For parent tasks
-    const [showSCurve, setShowSCurve] = useState(true);
     const [showDependencies, setShowDependencies] = useState(true);
     // Column Visibility State
     const [visibleColumns, setVisibleColumns] = useState(() => {
@@ -686,96 +686,37 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         }
     };
 
-    // Calculate S-Curve data for overlay
-    const scurveData = useMemo(() => {
-        if (tasks.length === 0 || !showSCurve) return [];
-
-        const buckets: { date: Date; cumulativePlan: number; cumulativeActual: number }[] = [];
-
-        timeline.items.forEach((item, idx) => {
-            let bucketEnd: Date;
-            if (viewMode === 'day') {
-                bucketEnd = item;
-            } else if (viewMode === 'week') {
-                bucketEnd = new Date(item);
-                bucketEnd.setDate(bucketEnd.getDate() + 6);
-            } else {
-                bucketEnd = endOfMonth(item);
-            }
-
-            let runningPlan = 0;
-            let runningActual = 0;
-
-            tasks.forEach(task => {
-                const tStart = parseISO(task.planStartDate);
-                const tEnd = parseISO(task.planEndDate);
-                const duration = differenceInDays(tEnd, tStart) + 1;
-                if (duration <= 0 || budgetStats.totalWeight <= 0) return;
-
-                const taskWeight = getTaskWeight(task);
-                const weightPerDay = taskWeight / duration;
-
-                // Calculate Plan contribution up to bucketEnd
-                if (isBefore(bucketEnd, tStart)) {
-                    // Not started yet
-                } else if (isAfter(bucketEnd, tEnd)) {
-                    // Task fully planned by this bucket
-                    runningPlan += taskWeight;
-                } else {
-                    // Partial overlap
-                    const daysInBucket = differenceInDays(bucketEnd, tStart) + 1;
-                    runningPlan += Math.min(taskWeight, daysInBucket * weightPerDay);
-                }
-
-                // Calculate Actual contribution
-                const progress = Number(task.progress) || 0;
-                const actualContribution = taskWeight * (progress / 100);
-
-                // For actual, we attribute it progressively
-                let actualStart = task.actualStartDate ? parseISO(task.actualStartDate) : tStart;
-                let actualEnd = task.actualEndDate ? parseISO(task.actualEndDate) :
-                    (progress > 0 ? new Date() : null);
-
-                if (actualEnd && isBefore(bucketEnd, actualStart)) {
-                    // Work hasn't started
-                } else if (actualEnd && isAfter(bucketEnd, actualEnd)) {
-                    // Work complete in this bucket
-                    runningActual += actualContribution;
-                } else if (actualEnd && progress > 0) {
-                    // Work in progress
-                    const actualDuration = differenceInDays(actualEnd, actualStart) + 1;
-                    const actualWeightPerDay = actualDuration > 0 ? actualContribution / actualDuration : actualContribution;
-                    const daysToNow = differenceInDays(bucketEnd, actualStart) + 1;
-                    runningActual += Math.min(actualContribution, Math.max(0, daysToNow) * actualWeightPerDay);
-                }
-            });
-
-            buckets.push({
-                date: bucketEnd,
-                cumulativePlan: Math.min(100, runningPlan),
-                cumulativeActual: Math.min(100, runningActual)
-            });
-        });
-
-        return buckets;
-    }, [tasks, timeline.items, viewMode, showSCurve, budgetStats]);
-
     // Calculate current progress stats
     const progressStats = useMemo(() => {
         let totalWeight = 0;
         let actualWeighted = 0;
+        let planWeighted = 0;
+        const today = new Date();
 
         tasks.forEach(task => {
             const weight = getTaskWeight(task);
             totalWeight += weight;
             actualWeighted += weight * (Number(task.progress) || 0) / 100;
+
+            // Calculate plan up to today
+            const tStart = parseISO(task.planStartDate);
+            const tEnd = parseISO(task.planEndDate);
+            if (isAfter(today, tEnd)) {
+                planWeighted += weight;
+            } else if (isAfter(today, tStart)) {
+                const totalDuration = differenceInDays(tEnd, tStart) + 1;
+                const daysPassed = differenceInDays(today, tStart) + 1;
+                if (totalDuration > 0) {
+                    planWeighted += weight * (daysPassed / totalDuration);
+                }
+            }
         });
 
         return {
             totalActual: actualWeighted,
-            totalPlan: scurveData.find(d => isAfter(d.date, new Date()))?.cumulativePlan || 100
+            totalPlan: Math.min(100, planWeighted)
         };
-    }, [tasks, scurveData]);
+    }, [tasks, budgetStats]);
 
     // Auto-scroll logic
     useEffect(() => {
@@ -827,6 +768,13 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         link.click();
         URL.revokeObjectURL(url);
     };
+
+    // PDF Export using custom hook
+    const { containerRef: chartContainerRef, exportToPdf: handleExportPDF } = usePdfExport({
+        title,
+        pageSize: 'A3',
+        orientation: 'landscape'
+    });
 
     // Group tasks with parent-child hierarchy
     const groupedTasks = useMemo(() => {
@@ -1310,20 +1258,19 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
     }, [visibleColumns]);
 
     return (
-        <div className="relative flex flex-col h-[750px] bg-white rounded border border-gray-300 w-full max-w-full overflow-hidden font-sans">
+        <div ref={chartContainerRef} className="relative flex flex-col h-[750px] bg-white rounded border border-gray-300 w-full max-w-full overflow-hidden font-sans">
             {/* Toolbar */}
             <GanttToolbar
                 title={title}
                 timeRange={timeRange}
                 viewMode={viewMode}
                 onViewModeChange={handleViewModeChange}
-                showSCurve={showSCurve}
-                onToggleSCurve={() => setShowSCurve(!showSCurve)}
                 showDates={showDates}
                 onToggleDates={() => setShowDates(!showDates)}
                 onNavigate={navigate}
                 onJumpToToday={() => setCurrentDate(new Date())}
                 onExport={handleExport}
+                onExportPDF={handleExportPDF}
                 budgetStats={budgetStats}
                 progressStats={progressStats}
                 visibleColumns={visibleColumns}
@@ -1349,14 +1296,6 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                             visibleColumns={visibleColumns}
                         />
 
-                        {/* S-Curve Overlay Area */}
-                        <SCurveOverlay
-                            showSCurve={showSCurve}
-                            scurveData={scurveData}
-                            timelineItems={timeline.items}
-                            config={config}
-                            stickyWidth={stickyWidth}
-                        />
 
                         {/* Task Rows */}
                         <div className="relative">
@@ -1554,11 +1493,6 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
 
                                                 <div className="flex-1 truncate text-xs font-bold text-gray-900 uppercase tracking-wide group/cat-header flex items-center" title={category}>
                                                     {category}
-                                                    {categorySummary.dateRange && (
-                                                        <span className="text-[10px] text-blue-600 font-normal font-mono ml-2">
-                                                            (autoupdate {formatDateTH(categorySummary.dateRange.start)} - {formatDateTH(categorySummary.dateRange.end)})
-                                                        </span>
-                                                    )}
                                                     <span className="ml-2 text-[9px] text-gray-500 font-normal bg-gray-100 px-1.5 rounded-full">{categorySummary.count}</span>
                                                     {onAddTaskToCategory && (
                                                         <button
@@ -1755,11 +1689,6 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                                                     ${t.type === 'group' || hasChildren(t.id) ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}
                                                                     title={t.name}>
                                                                     {t.name}
-                                                                    {isGroup && displayStartDate && displayEndDate && (
-                                                                        <span className="text-[10px] text-blue-600 font-normal font-mono ml-2">
-                                                                            (autoupdate {formatDateTH(displayStartDate)} - {formatDateTH(displayEndDate)})
-                                                                        </span>
-                                                                    )}
                                                                     {t.parentTaskId && onTaskUpdate && (
                                                                         <button
                                                                             className="ml-1 text-[9px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"

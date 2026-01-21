@@ -21,6 +21,7 @@ interface TimelineHeaderProps {
         period: boolean;
         progress: boolean;
     };
+    hideSidebar?: boolean;
 }
 
 export default function TimelineHeader({
@@ -29,33 +30,37 @@ export default function TimelineHeader({
     config,
     stickyWidth,
     showDates,
-    visibleColumns
+    visibleColumns,
+    hideSidebar = false
 }: TimelineHeaderProps) {
     return (
         <div className="sticky top-0 z-30 flex bg-white border-b border-gray-300">
             {/* Sticky Left Corner */}
-            <div className="sticky left-0 z-40 bg-gray-50 border-r border-gray-300 flex items-end pb-2 px-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)] h-12"
-                style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
-                <div className="flex-1 text-[11px] font-bold text-gray-800 uppercase tracking-wide">Task Name</div>
-                {visibleColumns && (
-                    <>
-                        {visibleColumns.cost && <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Cost</div>}
-                        {visibleColumns.weight && <div className="w-14 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Weight</div>}
-                        {visibleColumns.quantity && <div className="w-16 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Q'ty</div>}
-                        {visibleColumns.period && <div className="w-[110px] text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Period</div>}
-                        {visibleColumns.progress && <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">%Prog</div>}
-                    </>
-                )}
-                {!visibleColumns && showDates && (
-                    <>
-                        <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Cost</div>
-                        <div className="w-14 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Weight</div>
-                        <div className="w-16 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Q'ty</div>
-                        <div className="w-[110px] text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Period</div>
-                        <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">%Prog</div>
-                    </>
-                )}
-            </div>
+            {!hideSidebar && (
+                <div className="sticky left-0 z-40 bg-gray-50 border-r border-gray-300 flex items-end pb-2 px-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)] h-12"
+                    style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
+                    <div className="flex-1 text-[11px] font-bold text-gray-800 uppercase tracking-wide">Task Name</div>
+                    {visibleColumns && (
+                        <>
+                            {visibleColumns.cost && <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Cost</div>}
+                            {visibleColumns.weight && <div className="w-14 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Weight</div>}
+                            {visibleColumns.quantity && <div className="w-16 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Q'ty</div>}
+                            {visibleColumns.period && <div className="w-[110px] text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Period</div>}
+                            {visibleColumns.progress && <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">%Prog</div>}
+                        </>
+                    )}
+                    {!visibleColumns && showDates && (
+                        <>
+                            <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Cost</div>
+                            <div className="w-14 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Weight</div>
+                            <div className="w-16 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Q'ty</div>
+                            <div className="w-[110px] text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">Period</div>
+                            <div className="w-20 text-right text-[11px] font-bold text-gray-800 uppercase tracking-wide shrink-0">%Prog</div>
+                        </>
+                    )}
+
+                </div>
+            )}
 
             {/* Timeline Headers */}
             <div className="flex flex-col h-12 bg-white relative">

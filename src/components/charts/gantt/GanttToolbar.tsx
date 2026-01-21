@@ -6,6 +6,7 @@ import {
     Eye,
     EyeOff,
     Download,
+    FileDown,
     ChevronLeft,
     ChevronRight,
     Wallet,
@@ -21,13 +22,12 @@ interface GanttToolbarProps {
     timeRange: DateRange;
     viewMode: ViewMode;
     onViewModeChange: (mode: ViewMode) => void;
-    showSCurve: boolean;
-    onToggleSCurve: () => void;
     showDates: boolean;
     onToggleDates: () => void;
     onNavigate: (direction: 'prev' | 'next') => void;
     onJumpToToday: () => void;
     onExport: () => void;
+    onExportPDF?: () => void;
     budgetStats: {
         totalCost: number;
         totalDuration: number;
@@ -57,13 +57,12 @@ export default function GanttToolbar({
     timeRange,
     viewMode,
     onViewModeChange,
-    showSCurve,
-    onToggleSCurve,
     showDates,
     onToggleDates,
     onNavigate,
     onJumpToToday,
     onExport,
+    onExportPDF,
     budgetStats,
     progressStats,
     visibleColumns,
@@ -87,8 +86,8 @@ export default function GanttToolbar({
     }, [showColumnMenu]);
     return (
         <div className="flex flex-col sm:flex-row items-center justify-between p-3 border-b border-gray-200 bg-white gap-4 flex-shrink-0">
-            <div className="flex items-center gap-3">
-                <div className="p-1.5 bg-gray-100 text-gray-700 rounded-sm border border-gray-200">
+            <div className="flex items-center gap-3 print-show">
+                <div className="p-1.5 bg-gray-100 text-gray-700 rounded-sm border border-gray-200 print-hide">
                     <SlidersHorizontal className="w-4 h-4" />
                 </div>
                 <div>
@@ -100,7 +99,7 @@ export default function GanttToolbar({
             </div>
 
             {/* Budget Summary */}
-            <div className="flex items-center gap-4 px-3 py-1.5 bg-white rounded-sm border border-gray-300">
+            <div className="flex items-center gap-4 px-3 py-1.5 bg-white rounded-sm border border-gray-300 print-hide">
                 <div className="flex items-center gap-2">
                     <Wallet className="w-3.5 h-3.5 text-gray-600" />
                     <div>
@@ -118,7 +117,7 @@ export default function GanttToolbar({
                 </div>
             </div>
 
-            <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-sm border border-gray-200">
+            <div className="flex items-center gap-1 bg-gray-100 p-0.5 rounded-sm border border-gray-200 print-hide">
                 {(['day', 'week', 'month'] as ViewMode[]).map((mode) => (
                     <button key={mode} onClick={() => onViewModeChange(mode)}
                         className={`px-3 py-1 text-[11px] font-medium rounded-[2px] transition-all capitalize ${viewMode === mode ? 'bg-white text-gray-900 shadow-sm border border-gray-200' : 'text-gray-500 hover:text-gray-900'
@@ -128,16 +127,11 @@ export default function GanttToolbar({
                 ))}
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 print-hide">
                 <button onClick={onToggleDependencies}
                     title={showDependencies ? 'ซ่อนเส้นความสัมพันธ์' : 'แสดงเส้นความสัมพันธ์'}
                     className={`p-1.5 rounded-sm border transition-colors ${showDependencies ? 'bg-gray-100 border-gray-300 text-blue-600' : 'bg-white border-gray-300 text-gray-500'}`}>
                     <LinkIcon className="w-4 h-4" />
-                </button>
-                <button onClick={onToggleSCurve}
-                    title={showSCurve ? 'ซ่อน S-Curve' : 'แสดง S-Curve'}
-                    className={`p-1.5 rounded-sm border transition-colors ${showSCurve ? 'bg-gray-100 border-gray-300 text-gray-800' : 'bg-white border-gray-300 text-gray-500'}`}>
-                    <TrendingUp className="w-4 h-4" />
                 </button>
                 <button onClick={() => {
                     // Toggle all columns visibility at once
@@ -247,7 +241,18 @@ export default function GanttToolbar({
                 <button onClick={() => onNavigate('next')} className="p-1.5 hover:bg-gray-50 rounded-sm text-gray-600 border border-gray-300">
                     <ChevronRight className="w-4 h-4" />
                 </button>
+                <div className="h-5 w-px bg-gray-300 mx-1"></div>
+                {onExportPDF && (
+                    <button
+                        onClick={onExportPDF}
+                        className="px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-sm flex items-center gap-1.5 transition-colors"
+                        title="Export PDF"
+                    >
+                        <FileDown className="w-4 h-4" />
+                        PDF
+                    </button>
+                )}
             </div>
-        </div>
+        </div >
     );
 }

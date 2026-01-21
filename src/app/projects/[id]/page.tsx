@@ -1204,11 +1204,6 @@ export default function ProjectDetailPage() {
                                                         )}
                                                         <p className={`text-sm truncate ${isGroup ? 'font-bold text-gray-900 text-base' : 'font-medium text-gray-700'}`} title={task.name}>
                                                             {task.name}
-                                                            {isGroup && hasLeaves && (
-                                                                <span className="text-[10px] text-blue-600 font-normal font-mono ml-2">
-                                                                    (autoupdate {formatDateTH(displayStartDate)} - {formatDateTH(displayEndDate)})
-                                                                </span>
-                                                            )}
                                                         </p>
                                                         {!isGroup && (
                                                             <span className={`badge ${getStatusConfig(task.status).class} shrink-0 scale-90`}>
@@ -1359,21 +1354,6 @@ export default function ProjectDetailPage() {
                                             <span className="text-[10px] font-medium text-gray-500 bg-white px-2 py-0.5 rounded-full border border-gray-100">
                                                 {categoryTasks.length} รายการ
                                             </span>
-                                            {(() => {
-                                                const leaves = categoryTasks.filter(t => t.type !== 'group');
-                                                const catStarts = leaves.map(t => t.planStartDate).filter(Boolean).sort();
-                                                const catEnds = leaves.map(t => t.planEndDate).filter(Boolean).sort();
-                                                const catStart = catStarts.length > 0 ? catStarts[0] : null;
-                                                const catEnd = catEnds.length > 0 ? catEnds[catEnds.length - 1] : null;
-                                                if (catStart && catEnd) {
-                                                    return (
-                                                        <span className="text-xs text-blue-600 font-mono bg-blue-50 px-2 py-0.5 rounded-full ml-2">
-                                                            (autoupdate {formatDateTH(catStart)} - {formatDateTH(catEnd)})
-                                                        </span>
-                                                    );
-                                                }
-                                                return null;
-                                            })()}
                                         </div>
 
                                         {/* Category Reorder Handle */}
