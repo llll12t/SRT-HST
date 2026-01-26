@@ -9,16 +9,22 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.71.2",
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.7",
+    "@mui/material": "^7.3.7",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "firebase": "^12.7.0",
+    "frappe-gantt": "^1.0.4",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.0.0",
     "lucide-react": "^0.562.0",
     "next": "16.1.1",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "recharts": "^3.6.0",
+    "recharts": "^3.7.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
