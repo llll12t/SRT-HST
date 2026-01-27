@@ -5,7 +5,7 @@ import { Task } from '@/types/construction';
 import { format, parseISO, differenceInDays, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval, eachYearOfInterval, startOfMonth, endOfMonth, startOfYear, endOfYear, addMonths, subMonths, isSameDay, differenceInMonths, isBefore, isAfter, addDays } from 'date-fns';
 
 import { ViewMode, DragState, RowDragState, VisibleColumns, GanttConfig, DateRange, ColorMenuConfig } from './types';
-import { ChevronRight, ChevronDown, Plus, AlertTriangle, X, CornerDownRight, Folder } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, AlertTriangle, X, CornerDownRight, Folder, GripVertical } from 'lucide-react';
 import { DependencyLines } from './DependencyLines';
 import { CategoryRow } from './CategoryRow';
 import { TaskRow } from './TaskRow';
@@ -25,9 +25,10 @@ interface GanttChartProps {
     onOpenProgressModal?: (taskId: string) => void;
     onAddSubTask?: (parentId: string) => void;
     onAddTaskToCategory?: (category: string, subcategory?: string, subsubcategory?: string) => void;
+    updatingTaskIds?: Set<string>;
 }
 
-export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01', endDate = '2025-04-30', title, viewMode: controlledViewMode, onViewModeChange, onTaskUpdate, onOpenProgressModal, onAddSubTask, onAddTaskToCategory }: GanttChartProps) {
+export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01', endDate = '2025-04-30', title, viewMode: controlledViewMode, onViewModeChange, onTaskUpdate, onOpenProgressModal, onAddSubTask, onAddTaskToCategory, updatingTaskIds }: GanttChartProps) {
     // Optimistic State for smooth updates
     const [optimisticTasks, setOptimisticTasks] = useState<Task[]>(propTasks);
     // When props update (and we are NOT dragging/updating), sync.
@@ -160,6 +161,9 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
     const [dropPosition, setDropPosition] = useState<'above' | 'below' | 'child' | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
+    // Track specific IDs being updated for granular loading state
+    // Use props if provided, otherwise internal (though page provides it now)
+    const effectiveLoadingIds = updatingTaskIds || new Set<string>();
 
     // Reference Date State
     const [customDate, setCustomDate] = useState<Date | null>(() => {
@@ -263,6 +267,8 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         }
         setActiveColorMenu(null);
     };
+
+
 
     const COLORS = [
         '#3b82f6', // Blue (Default)
@@ -656,6 +662,225 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
         });
     };
 
+    // Category/Subcategory Drag & Drop State
+    const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+    const [categoryDragState, setCategoryDragState] = useState<{ id: string; type: 'category' | 'subcategory' | 'subsubcategory' | 'task' } | null>(null);
+
+    // Category Drag Handlers
+    const handleCategoryDragStart = (e: React.DragEvent, category: string) => {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', category);
+        setCategoryDragState({ id: category, type: 'category' });
+    };
+
+    const handleCategoryDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    };
+
+    const handleCategoryDrop = async (e: React.DragEvent, targetCategory: string) => {
+        e.preventDefault();
+        const sourceId = categoryDragState?.id;
+        const dragType = categoryDragState?.type;
+        setCategoryDragState(null);
+
+        if (!sourceId) return;
+
+        // Handle Category Reordering
+        if (dragType === 'category') {
+            if (sourceId === targetCategory) return;
+
+            const allCats = Object.keys(groupedTasks);
+            let currentOrder = categoryOrder.length > 0 ? [...categoryOrder] : [...allCats];
+
+            allCats.forEach(c => {
+                if (!currentOrder.includes(c)) currentOrder.push(c);
+            });
+
+            const sourceIndex = currentOrder.indexOf(sourceId);
+            const targetIndex = currentOrder.indexOf(targetCategory);
+
+            if (sourceIndex > -1 && targetIndex > -1) {
+                currentOrder.splice(sourceIndex, 1);
+                currentOrder.splice(targetIndex, 0, sourceId);
+                setCategoryOrder(currentOrder);
+            }
+            return;
+        }
+
+        // Handle Task -> Category Drop (Move task to target category)
+        if (dragType === 'task' && onTaskUpdate) {
+            const sourceTask = tasks.find(t => t.id === sourceId);
+            if (!sourceTask) return;
+
+            // Move task to target category (clearing subcategory/subsubcategory)
+            if (sourceTask.category !== targetCategory) {
+                await onTaskUpdate(sourceId, {
+                    category: targetCategory,
+                    subcategory: '',
+                    subsubcategory: '',
+                    order: 999999
+                });
+            }
+        }
+
+        // Handle Subcategory/Subsubcategory -> Category Drop (Promote or Move)
+        if ((dragType === 'subcategory' || dragType === 'subsubcategory') && onTaskUpdate) {
+            const parts = sourceId.split('::');
+            const sourceCat = parts[0];
+            const sourceSub = parts[1] || '';
+            const sourceSubSub = parts[2] || '';
+
+            // 1. Move "Subcategory" to another "Category"
+            if (dragType === 'subcategory' && sourceSub) {
+                if (sourceCat === targetCategory) return; // Same category, do nothing
+
+                // Find all tasks in this subcategory
+                const tasksToMove = tasks.filter(t => t.category === sourceCat && t.subcategory === sourceSub);
+
+                // Update all tasks
+                await Promise.all(tasksToMove.map(t => onTaskUpdate(t.id, {
+                    category: targetCategory,
+                    // subcategory remains the same
+                    // subsubcategory remains the same
+                })));
+            }
+
+            // 2. Promote "Subsubcategory" to "Subcategory" (Level 3 -> Level 2)
+            if (dragType === 'subsubcategory' && sourceSubSub) {
+                // If dropped on same category or different one, it is promoted to Subcategory of that target
+                // Logic: subcategory -> sourceSubSub, subsubcategory -> '' (cleared)
+
+                const tasksToMove = tasks.filter(t =>
+                    t.category === sourceCat &&
+                    t.subcategory === sourceSub &&
+                    t.subsubcategory === sourceSubSub
+                );
+
+                await Promise.all(tasksToMove.map(t => onTaskUpdate(t.id, {
+                    category: targetCategory,
+                    subcategory: sourceSubSub, // Promote name to Level 2
+                    subsubcategory: ''
+                })));
+            }
+        }
+    };
+
+    // Subcategory Drag Handlers (reuse similar pattern)
+    const handleSubcategoryDragStart = (e: React.DragEvent, subcatKey: string, type: 'subcategory' | 'subsubcategory') => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', subcatKey);
+        setCategoryDragState({ id: subcatKey, type });
+    };
+
+    const handleSubcategoryDrop = async (e: React.DragEvent, targetKey: string) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const sourceId = categoryDragState?.id;
+        const dragType = categoryDragState?.type;
+        setCategoryDragState(null);
+
+        if (!sourceId || !onTaskUpdate) return;
+
+        // Handle Task -> Subcategory Drop
+        if (dragType === 'task') {
+            const sourceTask = tasks.find(t => t.id === sourceId);
+            if (!sourceTask) return;
+
+            // Parse targetKey "Category::Subcategory" or "Category::Subcategory::SubSubcategory"
+            const parts = targetKey.split('::');
+            const targetCat = parts[0];
+            const targetSubcat = parts.length > 1 ? parts[1] : '';
+            const targetSubSubcat = parts.length > 2 ? parts[2] : '';
+
+            // Don't update if nothing changed
+            if (sourceTask.category === targetCat &&
+                (sourceTask.subcategory || '') === targetSubcat &&
+                (sourceTask.subsubcategory || '') === targetSubSubcat) {
+                return;
+            }
+
+            await onTaskUpdate(sourceId, {
+                category: targetCat,
+                subcategory: targetSubcat,
+                subsubcategory: targetSubSubcat,
+                order: 999999
+            });
+        }
+
+        // Handle Subsubcategory -> Subcategory Drop (Move L3 to new L2 parent)
+        if (dragType === 'subsubcategory' && onTaskUpdate) {
+            const parts = sourceId.split('::');
+            const sourceCat = parts[0];
+            const sourceSub = parts[1] || '';
+            const sourceSubSub = parts[2] || '';
+
+            // Target
+            const targetParts = targetKey.split('::');
+            const targetCat = targetParts[0];
+            const targetSub = targetParts[1];
+
+            // If dropped on same parent, do nothing
+            if (sourceCat === targetCat && sourceSub === targetSub) return;
+
+            // Find tasks
+            const tasksToMove = tasks.filter(t =>
+                t.category === sourceCat &&
+                t.subcategory === sourceSub &&
+                t.subsubcategory === sourceSubSub
+            );
+
+            await Promise.all(tasksToMove.map(t => onTaskUpdate(t.id, {
+                category: targetCat,
+                subcategory: targetSub,
+                subsubcategory: sourceSubSub // Keep name, just change parent
+            })));
+        }
+
+        // Handle Subcategory -> Subcategory Drop (Demote L2 to L3 under new parent)
+        if (dragType === 'subcategory' && onTaskUpdate) {
+            const parts = sourceId.split('::');
+            const sourceCat = parts[0];
+            const sourceSub = parts[1] || '';
+
+            // Target
+            const targetParts = targetKey.split('::');
+            const targetCat = targetParts[0];
+            // If dropping onto a subsubcategory header, we use its parent sub as target
+            // But usually this handler is for droppable headers. The key tells us.
+            // If targetKey is "Cat::Sub", then targetSub is "Sub".
+            const targetSub = targetParts[1];
+
+            // Avoid self-drop or logical circle if needed (though drag disabled usually prevents)
+            // If accidentally dropped on itself
+            if (sourceCat === targetCat && sourceSub === targetSub) return;
+
+            // Check if dropped onto a level 3 item (targetParts length > 2)?
+            // Usually we drop onto the subcategory header "Cat::Sub". 
+            // If we drop onto "Cat::Sub", we want SourceSub to become a child of "Sub".
+
+            const tasksToMove = tasks.filter(t => t.category === sourceCat && t.subcategory === sourceSub);
+
+            await Promise.all(tasksToMove.map(t => onTaskUpdate(t.id, {
+                category: targetCat,
+                subcategory: targetSub,
+                subsubcategory: sourceSub // Previous Sub name becomes Level 3 name
+            })));
+        }
+    };
+
+    // Track if task is being dragged (for row drag)
+    const handleTaskRowDragStart = (e: React.DragEvent, task: Task) => {
+        handleRowDragStart(e, task);
+        setCategoryDragState({ id: task.id, type: 'task' });
+    };
+
+    const handleTaskRowDragEnd = () => {
+        handleRowDragEnd();
+        setCategoryDragState(null);
+    };
+
 
 
 
@@ -1031,6 +1256,8 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
             await onTaskUpdate(draggedTaskId, {
                 parentTaskId: targetTaskId,
                 category: targetTask.category, // Adopt parent's category
+                subcategory: targetTask.subcategory || '',
+                subsubcategory: targetTask.subsubcategory || '',
                 order: maxOrder + 1
             });
 
@@ -1073,7 +1300,9 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
             await onTaskUpdate(draggedTaskId, {
                 order: newOrder,
                 parentTaskId: targetTask.parentTaskId || null,
-                category: targetTask.category
+                category: targetTask.category,
+                subcategory: targetTask.subcategory || '',
+                subsubcategory: targetTask.subsubcategory || ''
             });
         }
 
@@ -1121,13 +1350,13 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
 
                 // Subcategories
                 Object.entries(catData.subcategories).forEach(([subcat, subData]) => {
-                    const uniqueSubcatId = `${category}-${subcat}`;
+                    const uniqueSubcatId = `${category}::${subcat}`;
                     currentRow++; // Subcategory Header
 
                     if (!collapsedSubcategories.has(uniqueSubcatId)) {
                         // Sub-subcategories
                         Object.entries(subData.subsubcategories).forEach(([subsub, subsubTasks]) => {
-                            const uniqueSubSubId = `${uniqueSubcatId}-${subsub}`;
+                            const uniqueSubSubId = `${uniqueSubcatId}::${subsub}`;
                             currentRow++; // Sub-subcategory Header
 
                             if (!collapsedSubcategories.has(uniqueSubSubId)) {
@@ -1243,367 +1472,406 @@ export default function GanttChart({ tasks: propTasks, startDate = '2024-09-01',
                                 />
                             )}
 
-                            {Object.entries(groupedTasks).map(([category, catData]) => {
-                                const isCollapsed = collapsedCategories.has(category);
-                                // Combine all tasks for summary
+                            {Object.keys(groupedTasks)
+                                .sort((a, b) => {
+                                    if (categoryOrder.length === 0) return 0;
+                                    const ia = categoryOrder.indexOf(a);
+                                    const ib = categoryOrder.indexOf(b);
+                                    if (ia === -1) return 1;
+                                    if (ib === -1) return -1;
+                                    return ia - ib;
+                                })
+                                .map((category) => {
+                                    const catData = groupedTasks[category];
+                                    const isCollapsed = collapsedCategories.has(category);
+                                    // Combine all tasks for summary
 
 
-                                return (
-                                    <div key={category}>
-                                        {/* Category Header - Rendered as Level 0 Group Node */}
-                                        <CategoryRow
-                                            category={category}
-                                            catData={catData}
-                                            collapsedCategories={collapsedCategories}
-                                            toggleCategory={toggleCategory}
-                                            categoryColors={categoryColors}
-                                            setActiveColorMenu={setActiveColorMenu}
-                                            onAddTaskToCategory={onAddTaskToCategory}
-                                            visibleColumns={visibleColumns}
-                                            stickyWidth={stickyWidth}
-                                            timeline={timeline}
-                                            config={config}
-                                            viewMode={viewMode}
-                                            timeRange={timeRange}
-                                            getTaskWeight={getTaskWeight}
-                                        />
+                                    return (
+                                        <div key={category}>
+                                            {/* Category Header - Rendered as Level 0 Group Node */}
+                                            <CategoryRow
+                                                category={category}
+                                                catData={catData}
+                                                collapsedCategories={collapsedCategories}
+                                                toggleCategory={toggleCategory}
+                                                categoryColors={categoryColors}
+                                                setActiveColorMenu={setActiveColorMenu}
+                                                onAddTaskToCategory={onAddTaskToCategory}
+                                                visibleColumns={visibleColumns}
+                                                stickyWidth={stickyWidth}
+                                                timeline={timeline}
+                                                config={config}
+                                                viewMode={viewMode}
+                                                timeRange={timeRange}
+                                                getTaskWeight={getTaskWeight}
+                                                onCategoryDragStart={handleCategoryDragStart}
+                                                onCategoryDragOver={handleCategoryDragOver}
+                                                isDragging={categoryDragState?.id === category && categoryDragState?.type === 'category'}
+                                                loadingIds={effectiveLoadingIds} // Pass loading state
+                                            />
 
-                                        {/* Spacer to replace original div wrapper if needed or just nothing since CategoryRow returns a div */}
+                                            {/* Spacer to replace original div wrapper if needed or just nothing since CategoryRow returns a div */}
 
 
 
-                                        {/* Task Items - Hierarchical rendering */}
-                                        {
-                                            !isCollapsed && (() => {
+                                            {/* Task Items - Hierarchical rendering */}
+                                            {
+                                                !isCollapsed && (() => {
 
-                                                // Recursively render task and its children
-                                                const renderTaskTree = (t: Task, level: number) => {
-                                                    const children = getChildTasks(t.id);
-                                                    // Check if this task is collapsed (visual state for children)
-                                                    const isExpanded = !collapsedTasks.has(t.id);
+                                                    // Recursively render task and its children
+                                                    const renderTaskTree = (t: Task, level: number) => {
+                                                        const children = getChildTasks(t.id);
+                                                        // Check if this task is collapsed (visual state for children)
+                                                        const isExpanded = !collapsedTasks.has(t.id);
+
+                                                        return (
+                                                            <React.Fragment key={t.id}>
+                                                                <TaskRow
+                                                                    task={t}
+                                                                    level={level}
+                                                                    tasks={tasks}
+                                                                    config={config}
+                                                                    viewMode={viewMode}
+                                                                    timeRange={timeRange}
+                                                                    visibleColumns={visibleColumns}
+                                                                    stickyWidth={stickyWidth}
+                                                                    timeline={timeline}
+                                                                    collapsedTasks={collapsedTasks}
+                                                                    dragState={dragState}
+                                                                    rowDragState={rowDragState}
+                                                                    dropTargetId={dropTargetId}
+                                                                    dropPosition={dropPosition}
+                                                                    isUpdating={isUpdating}
+                                                                    showDependencies={showDependencies}
+                                                                    dependencySource={dependencySource}
+                                                                    getTaskWeight={getTaskWeight}
+                                                                    hasChildren={hasChildren}
+                                                                    getChildTasks={getChildTasks}
+                                                                    onTaskUpdate={onTaskUpdate}
+                                                                    onAddSubTask={onAddSubTask}
+                                                                    toggleTaskCollapse={toggleTaskCollapse}
+                                                                    handleRowDragStart={handleRowDragStart}
+                                                                    handleRowDragOver={handleRowDragOver}
+                                                                    handleRowDragLeave={handleRowDragLeave}
+                                                                    handleRowDrop={handleRowDrop}
+                                                                    handleRowDragEnd={handleRowDragEnd}
+                                                                    handleRemoveFromParent={handleRemoveFromParent}
+                                                                    setActiveColorMenu={setActiveColorMenu}
+                                                                    handleDependencyClick={handleDependencyClick}
+                                                                    setModalConfig={setModalConfig}
+                                                                    startDrag={startDrag}
+                                                                    loadingIds={effectiveLoadingIds}
+                                                                />
+                                                                {/* Render Children if Expanded */}
+                                                                {isExpanded && children.length > 0 && (
+                                                                    children.map(child => renderTaskTree(child, level + 1))
+                                                                )}
+                                                            </React.Fragment>
+                                                        );
+                                                    };
 
                                                     return (
-                                                        <React.Fragment key={t.id}>
-                                                            <TaskRow
-                                                                task={t}
-                                                                level={level}
-                                                                tasks={tasks}
-                                                                config={config}
-                                                                viewMode={viewMode}
-                                                                timeRange={timeRange}
-                                                                visibleColumns={visibleColumns}
-                                                                stickyWidth={stickyWidth}
-                                                                timeline={timeline}
-                                                                collapsedTasks={collapsedTasks}
-                                                                dragState={dragState}
-                                                                rowDragState={rowDragState}
-                                                                dropTargetId={dropTargetId}
-                                                                dropPosition={dropPosition}
-                                                                isUpdating={isUpdating}
-                                                                showDependencies={showDependencies}
-                                                                dependencySource={dependencySource}
-                                                                getTaskWeight={getTaskWeight}
-                                                                hasChildren={hasChildren}
-                                                                getChildTasks={getChildTasks}
-                                                                onTaskUpdate={onTaskUpdate}
-                                                                onAddSubTask={onAddSubTask}
-                                                                toggleTaskCollapse={toggleTaskCollapse}
-                                                                handleRowDragStart={handleRowDragStart}
-                                                                handleRowDragOver={handleRowDragOver}
-                                                                handleRowDragLeave={handleRowDragLeave}
-                                                                handleRowDrop={handleRowDrop}
-                                                                handleRowDragEnd={handleRowDragEnd}
-                                                                handleRemoveFromParent={handleRemoveFromParent}
-                                                                setActiveColorMenu={setActiveColorMenu}
-                                                                handleDependencyClick={handleDependencyClick}
-                                                                setModalConfig={setModalConfig}
-                                                                startDrag={startDrag}
-                                                            />
-                                                            {/* Render Children if Expanded */}
-                                                            {isExpanded && children.length > 0 && (
-                                                                children.map(child => renderTaskTree(child, level + 1))
-                                                            )}
-                                                        </React.Fragment>
-                                                    );
-                                                };
+                                                        <>
+                                                            {/* Subcategories (Level 1 Header, Level 2 Contents) */}
+                                                            {Object.entries(catData.subcategories).map(([subcat, subData]) => {
+                                                                const uniqueSubcatId = `${category}::${subcat}`;
+                                                                const isSubCollapsed = collapsedSubcategories.has(uniqueSubcatId);
+                                                                const subcatColor = categoryColors[uniqueSubcatId] || '#f59e0b'; // Default Amber
 
-                                                return (
-                                                    <>
-                                                        {/* Subcategories (Level 1 Header, Level 2 Contents) */}
-                                                        {Object.entries(catData.subcategories).map(([subcat, subData]) => {
-                                                            const uniqueSubcatId = `${category}-${subcat}`;
-                                                            const isSubCollapsed = collapsedSubcategories.has(uniqueSubcatId);
-                                                            const subcatColor = categoryColors[uniqueSubcatId] || '#f59e0b'; // Default Amber
+                                                                // Combine tasks for summary (include sub-sub tasks)
+                                                                const summaryTasks = [...subData.tasks, ...Object.values(subData.subsubcategories).flat()];
 
-                                                            // Combine tasks for summary (include sub-sub tasks)
-                                                            const summaryTasks = [...subData.tasks, ...Object.values(subData.subsubcategories).flat()];
+                                                                return (
+                                                                    <div key={uniqueSubcatId}>
+                                                                        {/* Subcategory Header */}
+                                                                        <div
+                                                                            className={`flex bg-gray-50/50 border-b border-dashed border-gray-200 h-8 group cursor-pointer hover:bg-gray-100/50 transition-colors ${categoryDragState?.id === uniqueSubcatId && categoryDragState?.type === 'subcategory' ? 'opacity-40 bg-blue-50' : ''}`}
+                                                                            onClick={() => toggleSubcategory(uniqueSubcatId)}
+                                                                            draggable
+                                                                            onDragStart={(e) => handleSubcategoryDragStart(e, uniqueSubcatId, 'subcategory')}
+                                                                            onDragOver={handleCategoryDragOver}
+                                                                            onDrop={(e) => handleSubcategoryDrop(e, uniqueSubcatId)}
+                                                                        >
+                                                                            <div className="sticky left-0 z-[60] bg-gray-50 group-hover:bg-gray-100 border-r border-gray-300 px-2 flex items-center gap-1"
+                                                                                style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '24px' }}>
 
-                                                            return (
-                                                                <div key={uniqueSubcatId}>
-                                                                    {/* Subcategory Header */}
-                                                                    <div
-                                                                        className="flex bg-gray-50/50 border-b border-dashed border-gray-200 h-8 group cursor-pointer hover:bg-gray-100/50 transition-colors"
-                                                                        onClick={() => toggleSubcategory(uniqueSubcatId)}
-                                                                    >
-                                                                        <div className="sticky left-0 z-[60] bg-gray-50 group-hover:bg-gray-100 border-r border-gray-300 px-4 flex items-center gap-2"
-                                                                            style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '36px' }}>
+                                                                                {/* Drag Handle */}
+                                                                                <div
+                                                                                    className="cursor-move text-gray-300 hover:text-gray-500 p-0.5"
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                >
+                                                                                    <GripVertical className="w-3 h-3" />
+                                                                                </div>
 
-                                                                            {/* Collapse Button */}
-                                                                            <div className="w-4 flex justify-center shrink-0">
-                                                                                <button className="p-0.5 hover:bg-gray-200 rounded-sm transition-colors text-gray-400">
-                                                                                    {isSubCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                                                                </button>
-                                                                            </div>
-
-                                                                            {/* Color Dot for Subcat */}
-                                                                            <button
-                                                                                className="w-2.5 h-2.5 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0"
-                                                                                style={{ backgroundColor: subcatColor }}
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    const rect = e.currentTarget.getBoundingClientRect();
-                                                                                    setActiveColorMenu({
-                                                                                        id: uniqueSubcatId,
-                                                                                        type: 'category',
-                                                                                        top: rect.bottom + window.scrollY,
-                                                                                        left: rect.left + window.scrollX
-                                                                                    });
-                                                                                }}
-                                                                                title="Change Subcategory Color"
-                                                                            />
-
-                                                                            <div className="flex-1 truncate text-xs font-bold text-gray-700 flex items-center group/subcat-header">
-                                                                                {subcat}
-                                                                                <span className="ml-2 text-[9px] text-gray-500 font-normal bg-gray-200 px-1.5 rounded-full">{summaryTasks.length}</span>
-                                                                                {onAddTaskToCategory && (
-                                                                                    <button
-                                                                                        className="ml-2 p-0.5 hover:bg-amber-100 rounded-sm transition-colors text-amber-500 opacity-0 group-hover/subcat-header:opacity-100"
-                                                                                        onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat); }}
-                                                                                        title="Add Task to Subcategory"
-                                                                                    >
-                                                                                        <Plus className="w-3 h-3" />
+                                                                                {/* Collapse Button */}
+                                                                                <div className="w-4 flex justify-center shrink-0">
+                                                                                    <button className="p-0.5 hover:bg-gray-200 rounded-sm transition-colors text-gray-400">
+                                                                                        {isSubCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                                                                     </button>
+                                                                                </div>
+
+                                                                                {/* Color Dot for Subcat */}
+                                                                                <button
+                                                                                    className="w-2.5 h-2.5 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0"
+                                                                                    style={{ backgroundColor: subcatColor }}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                                                        setActiveColorMenu({
+                                                                                            id: uniqueSubcatId,
+                                                                                            type: 'category',
+                                                                                            top: rect.bottom + window.scrollY,
+                                                                                            left: rect.left + window.scrollX
+                                                                                        });
+                                                                                    }}
+                                                                                    title="Change Subcategory Color"
+                                                                                />
+
+                                                                                <div className="flex-1 truncate text-xs font-bold text-gray-700 flex items-center group/subcat-header">
+                                                                                    {subcat}
+                                                                                    <span className="ml-2 text-[9px] text-gray-500 font-normal bg-gray-200 px-1.5 rounded-full">{summaryTasks.length}</span>
+                                                                                    {onAddTaskToCategory && (
+                                                                                        <button
+                                                                                            className="ml-2 p-0.5 hover:bg-amber-100 rounded-sm transition-colors text-amber-500 opacity-0 group-hover/subcat-header:opacity-100"
+                                                                                            onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat); }}
+                                                                                            title="Add Task to Subcategory"
+                                                                                        >
+                                                                                            <Plus className="w-3 h-3" />
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* Subcategory Summary Columns */}
+                                                                                {visibleColumns.cost && (
+                                                                                    <div className="w-20 text-right text-xs text-gray-600 font-medium font-mono shrink-0">
+                                                                                        {getCategorySummary(summaryTasks, getTaskWeight).totalCost.toLocaleString()}
+                                                                                    </div>
+                                                                                )}
+                                                                                {visibleColumns.weight && (
+                                                                                    <div className="w-14 text-right text-xs text-gray-600 font-medium font-mono shrink-0">
+                                                                                        {getCategorySummary(summaryTasks, getTaskWeight).totalWeight.toFixed(2)}%
+                                                                                    </div>
+                                                                                )}
+                                                                                {visibleColumns.quantity && (
+                                                                                    <div className="w-16 shrink-0"></div>
+                                                                                )}
+                                                                                {visibleColumns.period && (
+                                                                                    <div className="w-[110px] text-right text-[10px] text-gray-500 font-mono shrink-0">
+                                                                                        {getCategorySummary(summaryTasks, getTaskWeight).dateRange ? (
+                                                                                            formatDateRange(
+                                                                                                getCategorySummary(summaryTasks, getTaskWeight).dateRange!.start,
+                                                                                                getCategorySummary(summaryTasks, getTaskWeight).dateRange!.end
+                                                                                            )
+                                                                                        ) : '-'}
+                                                                                    </div>
+                                                                                )}
+                                                                                {visibleColumns.progress && (
+                                                                                    <div className="w-20 flex items-center justify-end shrink-0 gap-1 pr-1">
+                                                                                        <span className="w-[45px] text-right text-xs text-amber-600 font-bold font-mono">
+                                                                                            {getCategorySummary(summaryTasks, getTaskWeight).avgProgress.toFixed(0)}%
+                                                                                        </span>
+                                                                                        <div className="w-[22px]"></div>
+                                                                                    </div>
                                                                                 )}
                                                                             </div>
+                                                                            {/* Subcategory Summary Chart Area */}
+                                                                            <div className="flex-1 relative" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
+                                                                                <div className="absolute inset-0 flex pointer-events-none">
+                                                                                    {timeline.items.map((item, idx) => (
+                                                                                        <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/50' : ''}`} style={{ width: config.cellWidth }} />
+                                                                                    ))}
+                                                                                </div>
 
-                                                                            {/* Subcategory Summary Columns */}
-                                                                            {visibleColumns.cost && (
-                                                                                <div className="w-20 text-right text-xs text-gray-600 font-medium font-mono shrink-0">
-                                                                                    {getCategorySummary(summaryTasks, getTaskWeight).totalCost.toLocaleString()}
-                                                                                </div>
-                                                                            )}
-                                                                            {visibleColumns.weight && (
-                                                                                <div className="w-14 text-right text-xs text-gray-600 font-medium font-mono shrink-0">
-                                                                                    {getCategorySummary(summaryTasks, getTaskWeight).totalWeight.toFixed(2)}%
-                                                                                </div>
-                                                                            )}
-                                                                            {visibleColumns.quantity && (
-                                                                                <div className="w-16 shrink-0"></div>
-                                                                            )}
-                                                                            {visibleColumns.period && (
-                                                                                <div className="w-[110px] text-right text-[10px] text-gray-500 font-mono shrink-0">
-                                                                                    {getCategorySummary(summaryTasks, getTaskWeight).dateRange ? (
-                                                                                        formatDateRange(
-                                                                                            getCategorySummary(summaryTasks, getTaskWeight).dateRange!.start,
-                                                                                            getCategorySummary(summaryTasks, getTaskWeight).dateRange!.end
-                                                                                        )
-                                                                                    ) : '-'}
-                                                                                </div>
-                                                                            )}
-                                                                            {visibleColumns.progress && (
-                                                                                <div className="w-20 flex items-center justify-end shrink-0 gap-1 pr-1">
-                                                                                    <span className="w-[45px] text-right text-xs text-amber-600 font-bold font-mono">
-                                                                                        {getCategorySummary(summaryTasks, getTaskWeight).avgProgress.toFixed(0)}%
-                                                                                    </span>
-                                                                                    <div className="w-[22px]"></div>
-                                                                                </div>
-                                                                            )}
-                                                                        </div>
-                                                                        {/* Subcategory Summary Chart Area */}
-                                                                        <div className="flex-1 relative" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
-                                                                            <div className="absolute inset-0 flex pointer-events-none">
-                                                                                {timeline.items.map((item, idx) => (
-                                                                                    <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/50' : ''}`} style={{ width: config.cellWidth }} />
-                                                                                ))}
-                                                                            </div>
+                                                                                {/* Render Subcategory Summary Bar */}
+                                                                                {(() => {
+                                                                                    const subcatSummary = getCategorySummary(summaryTasks, getTaskWeight); // Reuse existing helper since logic is same
+                                                                                    if (!subcatSummary.dateRange) return null;
 
-                                                                            {/* Render Subcategory Summary Bar */}
-                                                                            {(() => {
-                                                                                const subcatSummary = getCategorySummary(summaryTasks, getTaskWeight); // Reuse existing helper since logic is same
-                                                                                if (!subcatSummary.dateRange) return null;
-
-                                                                                return (
-                                                                                    <div
-                                                                                        className="absolute h-2.5 top-[11px] rounded-full border border-gray-400/30"
-                                                                                        style={{
-                                                                                            ...getCategoryBarStyle(subcatSummary.dateRange, viewMode, config, timeRange),
-                                                                                            backgroundColor: `${subcatColor}33`,
-                                                                                            zIndex: 30
-                                                                                        }}
-                                                                                    >
+                                                                                    return (
                                                                                         <div
-                                                                                            className="absolute left-0 top-0 bottom-0 rounded-full"
+                                                                                            className="absolute h-2.5 top-[11px] rounded-full border border-gray-400/30"
                                                                                             style={{
-                                                                                                width: `${subcatSummary.avgProgress}%`,
-                                                                                                backgroundColor: subcatColor,
-                                                                                                opacity: 0.8
+                                                                                                ...getCategoryBarStyle(subcatSummary.dateRange, viewMode, config, timeRange),
+                                                                                                backgroundColor: `${subcatColor}33`,
+                                                                                                zIndex: 30
                                                                                             }}
-                                                                                        />
-                                                                                    </div>
-                                                                                );
-                                                                            })()}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {!isSubCollapsed && (
-                                                                        <>
-                                                                            {/* Sub-Subcategories (Level 2 Header, Level 3 Contents) */}
-                                                                            {Object.entries(subData.subsubcategories).map(([subsubcat, subsubTasks]) => {
-                                                                                const uniqueSubSubId = `${uniqueSubcatId}-${subsubcat}`;
-                                                                                const isSubSubCollapsed = collapsedSubcategories.has(uniqueSubSubId);
-                                                                                const subSubColor = categoryColors[uniqueSubSubId] || '#9ca3af'; // Default Gray
-
-                                                                                return (
-                                                                                    <div key={uniqueSubSubId}>
-                                                                                        {/* Sub-Subcategory Header */}
-                                                                                        <div
-                                                                                            className="flex bg-gray-50/30 border-b border-dashed border-gray-100 h-8 group cursor-pointer hover:bg-gray-100/30 transition-colors"
-                                                                                            onClick={() => toggleSubcategory(uniqueSubSubId)}
                                                                                         >
-                                                                                            <div className="sticky left-0 z-[60] bg-gray-50 group-hover:bg-gray-100 border-r border-gray-300 px-4 flex items-center gap-2"
-                                                                                                style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '56px' }}>
+                                                                                            <div
+                                                                                                className="absolute left-0 top-0 bottom-0 rounded-full"
+                                                                                                style={{
+                                                                                                    width: `${subcatSummary.avgProgress}%`,
+                                                                                                    backgroundColor: subcatColor,
+                                                                                                    opacity: 0.8
+                                                                                                }}
+                                                                                            />
+                                                                                        </div>
+                                                                                    );
+                                                                                })()}
+                                                                            </div>
+                                                                        </div>
 
-                                                                                                {/* Collapse Button */}
-                                                                                                <div className="w-4 flex justify-center shrink-0">
-                                                                                                    <button className="p-0.5 hover:bg-gray-200 rounded-sm transition-colors text-gray-400">
-                                                                                                        {isSubSubCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                                                                                    </button>
-                                                                                                </div>
+                                                                        {!isSubCollapsed && (
+                                                                            <>
+                                                                                {/* Sub-Subcategories (Level 2 Header, Level 3 Contents) */}
+                                                                                {Object.entries(subData.subsubcategories).map(([subsubcat, subsubTasks]) => {
+                                                                                    const uniqueSubSubId = `${uniqueSubcatId}::${subsubcat}`;
+                                                                                    const isSubSubCollapsed = collapsedSubcategories.has(uniqueSubSubId);
+                                                                                    const subSubColor = categoryColors[uniqueSubSubId] || '#9ca3af'; // Default Gray
 
-                                                                                                {/* Color Dot for Sub-Subcat */}
-                                                                                                <button
-                                                                                                    className="w-2.5 h-2.5 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0 mr-2"
-                                                                                                    style={{ backgroundColor: subSubColor }}
-                                                                                                    onClick={(e) => {
-                                                                                                        e.stopPropagation();
-                                                                                                        const rect = e.currentTarget.getBoundingClientRect();
-                                                                                                        setActiveColorMenu({
-                                                                                                            id: uniqueSubSubId,
-                                                                                                            type: 'category',
-                                                                                                            top: rect.bottom + window.scrollY,
-                                                                                                            left: rect.left + window.scrollX
-                                                                                                        });
-                                                                                                    }}
-                                                                                                    title="Change Sub-Subcategory Color"
-                                                                                                />
+                                                                                    return (
+                                                                                        <div key={uniqueSubSubId}>
+                                                                                            {/* Sub-Subcategory Header */}
+                                                                                            <div
+                                                                                                className={`flex bg-gray-50/30 border-b border-dashed border-gray-100 h-8 group cursor-pointer hover:bg-gray-100/30 transition-colors ${categoryDragState?.id === uniqueSubSubId && categoryDragState?.type === 'subsubcategory' ? 'opacity-40 bg-blue-50' : ''}`}
+                                                                                                onClick={() => toggleSubcategory(uniqueSubSubId)}
+                                                                                                draggable
+                                                                                                onDragStart={(e) => handleSubcategoryDragStart(e, uniqueSubSubId, 'subsubcategory')}
+                                                                                                onDragOver={handleCategoryDragOver}
+                                                                                                onDrop={(e) => handleSubcategoryDrop(e, uniqueSubSubId)}
+                                                                                            >
+                                                                                                <div className="sticky left-0 z-[60] bg-gray-50 group-hover:bg-gray-100 border-r border-gray-300 px-2 flex items-center gap-1"
+                                                                                                    style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '44px' }}>
 
-                                                                                                <div className="flex-1 truncate text-xs font-semibold text-gray-600 flex items-center">
-                                                                                                    {subsubcat}
-                                                                                                    <span className="ml-2 text-[8px] text-gray-400 font-normal bg-gray-100 px-1.5 rounded-full">{subsubTasks.length}</span>
-                                                                                                    {onAddTaskToCategory && (
-                                                                                                        <button
-                                                                                                            className="ml-2 p-0.5 hover:bg-amber-100 rounded-sm transition-colors text-amber-500 opacity-0 group-hover:opacity-100"
-                                                                                                            onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat, subsubcat); }}
-                                                                                                            title="Add Task to Sub-Subcategory"
-                                                                                                        >
-                                                                                                            <Plus className="w-3 h-3" />
+                                                                                                    {/* Drag Handle */}
+                                                                                                    <div
+                                                                                                        className="cursor-move text-gray-300 hover:text-gray-500 p-0.5"
+                                                                                                        onClick={(e) => e.stopPropagation()}
+                                                                                                    >
+                                                                                                        <GripVertical className="w-3 h-3" />
+                                                                                                    </div>
+
+                                                                                                    {/* Collapse Button */}
+                                                                                                    <div className="w-4 flex justify-center shrink-0">
+                                                                                                        <button className="p-0.5 hover:bg-gray-200 rounded-sm transition-colors text-gray-400">
+                                                                                                            {isSubSubCollapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                                                                                                         </button>
+                                                                                                    </div>
+
+                                                                                                    {/* Color Dot for Sub-Subcat */}
+                                                                                                    <button
+                                                                                                        className="w-2.5 h-2.5 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0 mr-2"
+                                                                                                        style={{ backgroundColor: subSubColor }}
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                                                                            setActiveColorMenu({
+                                                                                                                id: uniqueSubSubId,
+                                                                                                                type: 'category',
+                                                                                                                top: rect.bottom + window.scrollY,
+                                                                                                                left: rect.left + window.scrollX
+                                                                                                            });
+                                                                                                        }}
+                                                                                                        title="Change Sub-Subcategory Color"
+                                                                                                    />
+
+                                                                                                    <div className="flex-1 truncate text-xs font-semibold text-gray-600 flex items-center">
+                                                                                                        {subsubcat}
+                                                                                                        <span className="ml-2 text-[8px] text-gray-400 font-normal bg-gray-100 px-1.5 rounded-full">{subsubTasks.length}</span>
+                                                                                                        {onAddTaskToCategory && (
+                                                                                                            <button
+                                                                                                                className="ml-2 p-0.5 hover:bg-amber-100 rounded-sm transition-colors text-amber-500 opacity-0 group-hover:opacity-100"
+                                                                                                                onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat, subsubcat); }}
+                                                                                                                title="Add Task to Sub-Subcategory"
+                                                                                                            >
+                                                                                                                <Plus className="w-3 h-3" />
+                                                                                                            </button>
+                                                                                                        )}
+                                                                                                    </div>
+
+                                                                                                    {/* Sub-subcat Summary Columns */}
+                                                                                                    {visibleColumns.cost && (
+                                                                                                        <div className="w-20 text-right text-xs text-gray-500 font-medium font-mono shrink-0">
+                                                                                                            {getCategorySummary(subsubTasks, getTaskWeight).totalCost.toLocaleString()}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    {visibleColumns.weight && (
+                                                                                                        <div className="w-14 text-right text-xs text-gray-500 font-medium font-mono shrink-0">
+                                                                                                            {getCategorySummary(subsubTasks, getTaskWeight).totalWeight.toFixed(2)}%
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    {visibleColumns.quantity && (
+                                                                                                        <div className="w-16 shrink-0"></div>
+                                                                                                    )}
+                                                                                                    {visibleColumns.period && (
+                                                                                                        <div className="w-[110px] text-right text-[10px] text-gray-400 font-mono shrink-0">
+                                                                                                            {getCategorySummary(subsubTasks, getTaskWeight).dateRange ? (
+                                                                                                                formatDateRange(
+                                                                                                                    getCategorySummary(subsubTasks, getTaskWeight).dateRange!.start,
+                                                                                                                    getCategorySummary(subsubTasks, getTaskWeight).dateRange!.end
+                                                                                                                )
+                                                                                                            ) : '-'}
+                                                                                                        </div>
+                                                                                                    )}
+                                                                                                    {visibleColumns.progress && (
+                                                                                                        <div className="w-20 flex items-center justify-end shrink-0 gap-1 pr-1">
+                                                                                                            <span className="w-[45px] text-right text-xs text-amber-600/70 font-bold font-mono">
+                                                                                                                {getCategorySummary(subsubTasks, getTaskWeight).avgProgress.toFixed(0)}%
+                                                                                                            </span>
+                                                                                                            <div className="w-[22px]"></div>
+                                                                                                        </div>
                                                                                                     )}
                                                                                                 </div>
+                                                                                                {/* Chart placeholder with summary bar possibility */}
+                                                                                                <div className="flex-1 relative" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
+                                                                                                    <div className="absolute inset-0 flex pointer-events-none">
+                                                                                                        {timeline.items.map((item, idx) => (
+                                                                                                            <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-100 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/30' : ''}`} style={{ width: config.cellWidth }} />
+                                                                                                        ))}
+                                                                                                    </div>
 
-                                                                                                {/* Sub-subcat Summary Columns */}
-                                                                                                {visibleColumns.cost && (
-                                                                                                    <div className="w-20 text-right text-xs text-gray-500 font-medium font-mono shrink-0">
-                                                                                                        {getCategorySummary(subsubTasks, getTaskWeight).totalCost.toLocaleString()}
-                                                                                                    </div>
-                                                                                                )}
-                                                                                                {visibleColumns.weight && (
-                                                                                                    <div className="w-14 text-right text-xs text-gray-500 font-medium font-mono shrink-0">
-                                                                                                        {getCategorySummary(subsubTasks, getTaskWeight).totalWeight.toFixed(2)}%
-                                                                                                    </div>
-                                                                                                )}
-                                                                                                {visibleColumns.quantity && (
-                                                                                                    <div className="w-16 shrink-0"></div>
-                                                                                                )}
-                                                                                                {visibleColumns.period && (
-                                                                                                    <div className="w-[110px] text-right text-[10px] text-gray-400 font-mono shrink-0">
-                                                                                                        {getCategorySummary(subsubTasks, getTaskWeight).dateRange ? (
-                                                                                                            formatDateRange(
-                                                                                                                getCategorySummary(subsubTasks, getTaskWeight).dateRange!.start,
-                                                                                                                getCategorySummary(subsubTasks, getTaskWeight).dateRange!.end
-                                                                                                            )
-                                                                                                        ) : '-'}
-                                                                                                    </div>
-                                                                                                )}
-                                                                                                {visibleColumns.progress && (
-                                                                                                    <div className="w-20 flex items-center justify-end shrink-0 gap-1 pr-1">
-                                                                                                        <span className="w-[45px] text-right text-xs text-amber-600/70 font-bold font-mono">
-                                                                                                            {getCategorySummary(subsubTasks, getTaskWeight).avgProgress.toFixed(0)}%
-                                                                                                        </span>
-                                                                                                        <div className="w-[22px]"></div>
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-                                                                                            {/* Chart placeholder with summary bar possibility */}
-                                                                                            <div className="flex-1 relative" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
-                                                                                                <div className="absolute inset-0 flex pointer-events-none">
-                                                                                                    {timeline.items.map((item, idx) => (
-                                                                                                        <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-100 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/30' : ''}`} style={{ width: config.cellWidth }} />
-                                                                                                    ))}
-                                                                                                </div>
+                                                                                                    {/* Render Sub-Subcategory Summary Bar */}
+                                                                                                    {(() => {
+                                                                                                        const subSubSummary = getCategorySummary(subsubTasks, getTaskWeight);
+                                                                                                        if (!subSubSummary.dateRange) return null;
 
-                                                                                                {/* Render Sub-Subcategory Summary Bar */}
-                                                                                                {(() => {
-                                                                                                    const subSubSummary = getCategorySummary(subsubTasks, getTaskWeight);
-                                                                                                    if (!subSubSummary.dateRange) return null;
-
-                                                                                                    return (
-                                                                                                        <div
-                                                                                                            className="absolute h-2 top-[12px] rounded-full border border-gray-400/20"
-                                                                                                            style={{
-                                                                                                                ...getCategoryBarStyle(subSubSummary.dateRange, viewMode, config, timeRange),
-                                                                                                                // backgroundColor: 'rgba(156, 163, 175, 0.2)', // Old fixed gray
-                                                                                                                backgroundColor: `${subSubColor}33`, // Dynamic color with opacity
-                                                                                                                zIndex: 30
-                                                                                                            }}
-                                                                                                        >
+                                                                                                        return (
                                                                                                             <div
-                                                                                                                className="absolute left-0 top-0 bottom-0 rounded-full"
+                                                                                                                className="absolute h-2 top-[12px] rounded-full border border-gray-400/20"
                                                                                                                 style={{
-                                                                                                                    width: `${subSubSummary.avgProgress}%`,
-                                                                                                                    backgroundColor: subSubColor,
-                                                                                                                    opacity: 0.7
+                                                                                                                    ...getCategoryBarStyle(subSubSummary.dateRange, viewMode, config, timeRange),
+                                                                                                                    // backgroundColor: 'rgba(156, 163, 175, 0.2)', // Old fixed gray
+                                                                                                                    backgroundColor: `${subSubColor}33`, // Dynamic color with opacity
+                                                                                                                    zIndex: 30
                                                                                                                 }}
-                                                                                                            />
-                                                                                                        </div>
-                                                                                                    );
-                                                                                                })()}
+                                                                                                            >
+                                                                                                                <div
+                                                                                                                    className="absolute left-0 top-0 bottom-0 rounded-full"
+                                                                                                                    style={{
+                                                                                                                        width: `${subSubSummary.avgProgress}%`,
+                                                                                                                        backgroundColor: subSubColor,
+                                                                                                                        opacity: 0.7
+                                                                                                                    }}
+                                                                                                                />
+                                                                                                            </div>
+                                                                                                        );
+                                                                                                    })()}
+                                                                                                </div>
                                                                                             </div>
+
+                                                                                            {/* Sub-Subcategory Tasks */}
+                                                                                            {!isSubSubCollapsed && subsubTasks.map(t => renderTaskTree(t, 3))}
                                                                                         </div>
+                                                                                    );
+                                                                                })}
 
-                                                                                        {/* Sub-Subcategory Tasks */}
-                                                                                        {!isSubSubCollapsed && subsubTasks.map(t => renderTaskTree(t, 3))}
-                                                                                    </div>
-                                                                                );
-                                                                            })}
+                                                                                {/* Direct Subcategory Tasks */}
+                                                                                {subData.tasks.map(t => renderTaskTree(t, 2))}
+                                                                            </>
+                                                                        )}
+                                                                    </div >
+                                                                );
+                                                            })}
 
-                                                                            {/* Direct Subcategory Tasks */}
-                                                                            {subData.tasks.map(t => renderTaskTree(t, 2))}
-                                                                        </>
-                                                                    )}
-                                                                </div >
-                                                            );
-                                                        })}
-
-                                                        {/* Direct Tasks (No subcategory) - Level 1 to indent from Category */}
-                                                        {catData.tasks.map(t => renderTaskTree(t, 1))}
-                                                    </>
-                                                );
-                                            })()
-                                        }
-                                    </div>
-                                );
-                            })}
+                                                            {/* Direct Tasks (No subcategory) - Level 1 to indent from Category */}
+                                                            {catData.tasks.map(t => renderTaskTree(t, 1))}
+                                                        </>
+                                                    );
+                                                })()
+                                            }
+                                        </div>
+                                    );
+                                })}
                         </div>
 
 

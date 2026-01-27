@@ -19,7 +19,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
             <Sidebar />
             <div className={clsx(
                 'flex-1 transition-all duration-200',
-                collapsed ? 'lg:ml-16' : 'lg:ml-64'
+                collapsed ? 'lg:ml-16' : 'lg:ml-56'
             )}>
                 <Header />
                 <main className="p-6">

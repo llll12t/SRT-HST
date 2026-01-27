@@ -26,6 +26,7 @@ import {
 import { Project } from '@/types/construction';
 import { getProjects, createProject, updateProject, deleteProject } from '@/lib/firestore';
 import { useAuth } from '@/contexts/AuthContext';
+import { format, parseISO, differenceInDays } from 'date-fns';
 
 type StatusType = 'all' | 'active' | 'planning' | 'in-progress' | 'completed' | 'on-hold';
 
@@ -58,6 +59,16 @@ export default function ProjectsPage() {
         budget: 0,
         status: 'planning' as Project['status']
     });
+
+    // Helper: Format date
+    const formatDate = (dateStr: string) => {
+        if (!dateStr) return '-';
+        try {
+            return format(parseISO(dateStr), 'dd/MM/yyyy');
+        } catch {
+            return dateStr;
+        }
+    };
 
     // Fetch projects
     useEffect(() => {
@@ -425,10 +436,13 @@ export default function ProjectsPage() {
                                     <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
                                         <div className="flex items-center gap-1.5">
                                             <Calendar className="w-3.5 h-3.5" />
-                                            <span>{project.startDate}</span>
+                                            <span>{formatDate(project.startDate)}</span>
                                         </div>
                                         <span>→</span>
-                                        <span>{project.endDate}</span>
+                                        <span>{formatDate(project.endDate)}</span>
+                                        <span className="text-gray-400">
+                                            ({Math.max(0, differenceInDays(parseISO(project.endDate), parseISO(project.startDate)) + 1)} วัน)
+                                        </span>
                                     </div>
 
                                     {/* Footer */}
@@ -505,7 +519,10 @@ export default function ProjectsPage() {
                                                     <p className={`text-sm font-medium transition-colors ${isCompleted ? 'text-green-900' : 'text-gray-900 group-hover:text-blue-600'}`}>
                                                         {project.name}
                                                     </p>
-                                                    <p className="text-xs text-gray-500">{project.startDate} → {project.endDate}</p>
+                                                    <p className="text-xs text-gray-500">
+                                                        {formatDate(project.startDate)} → {formatDate(project.endDate)}
+                                                        <span className="ml-2">({Math.max(0, differenceInDays(parseISO(project.endDate), parseISO(project.startDate)) + 1)} วัน)</span>
+                                                    </p>
                                                 </Link>
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-700">{project.owner}</td>

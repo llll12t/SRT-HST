@@ -45,6 +45,7 @@ interface TaskRowProps {
     handleDependencyClick: (taskId: string, side: 'start' | 'end') => void;
     setModalConfig: (config: any) => void;
     startDrag: (e: React.MouseEvent, task: Task, type: DragState['type'], barType?: 'plan' | 'actual') => void;
+    loadingIds?: Set<string>;
 }
 
 export const TaskRow: React.FC<TaskRowProps> = ({
@@ -80,7 +81,8 @@ export const TaskRow: React.FC<TaskRowProps> = ({
     setActiveColorMenu,
     handleDependencyClick,
     setModalConfig,
-    startDrag
+    startDrag,
+    loadingIds
 }) => {
     const tWeight = getTaskWeight(t);
     const tHasChildren = hasChildren(t.id);
@@ -88,6 +90,9 @@ export const TaskRow: React.FC<TaskRowProps> = ({
     const tIsDropTarget = dropTargetId === t.id;
     const tIsDragging = rowDragState?.taskId === t.id;
     const childTasks = getChildTasks(t.id);
+
+    // Check loading state
+    const isLoading = loadingIds?.has(t.id);
 
     // Calculate group summary for group-type tasks
     const isGroup = t.type === 'group';
@@ -198,6 +203,13 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                 ✕
                             </button>
                         )}
+                        {/* Loading Spinner */}
+                        {isLoading && (
+                            <svg className="ml-2 animate-spin h-3 w-3 text-blue-500 inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        )}
                     </div>
 
                     {visibleColumns.cost && (
@@ -260,6 +272,34 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                             <span className={`w-[45px] text-right text-xs font-bold font-mono ${Number(t.progress) === 100 ? 'text-green-600' : 'text-blue-600'}`}>
                                                 {Number(t.progress)}%
                                             </span>
+                                            {/* Quick Complete Button */}
+                                            {Number(t.progress) < 100 && (
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setModalConfig({
+                                                            isOpen: true,
+                                                            title: 'จบงาน (100%)',
+                                                            message: 'คุณต้องการจบงานนี้ทันทีหรือไม่? (ระบบจะบันทึกเป็น 100% ณ วันนี้)',
+                                                            type: 'confirm',
+                                                            onConfirm: () => {
+                                                                // Use existing actualEndDate (if dragged) or Today
+                                                                const finalDate = t.actualEndDate || format(new Date(), 'yyyy-MM-dd');
+
+                                                                onTaskUpdate?.(t.id, {
+                                                                    progress: 100,
+                                                                    actualEndDate: finalDate,
+                                                                    status: 'completed'
+                                                                });
+                                                            }
+                                                        });
+                                                    }}
+                                                    className="opacity-0 group-hover/prog-cell:opacity-100 w-[22px] flex justify-center text-gray-400 hover:text-green-600 transition-opacity"
+                                                    title="จบงาน (Complete)"
+                                                >
+                                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={(e) => {
                                                     e.stopPropagation();
@@ -289,6 +329,8 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                             )}
                         </div>
                     )}
+
+
                 </div>
 
                 <div className="relative overflow-hidden" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
@@ -471,49 +513,53 @@ export const TaskRow: React.FC<TaskRowProps> = ({
             </div>
 
             {/* Drop indicator - Below */}
-            {tIsDropTarget && dropPosition === 'below' && (
-                <div className="h-0.5 bg-blue-500 w-full" />
-            )}
+            {
+                tIsDropTarget && dropPosition === 'below' && (
+                    <div className="h-0.5 bg-blue-500 w-full" />
+                )
+            }
 
             {/* Render children recursively */}
-            {!tIsCollapsed && childTasks.map(child => (
-                <TaskRow
-                    key={child.id}
-                    task={child}
-                    level={level + 1}
-                    tasks={tasks}
-                    config={config}
-                    viewMode={viewMode}
-                    timeRange={timeRange}
-                    visibleColumns={visibleColumns}
-                    stickyWidth={stickyWidth}
-                    timeline={timeline}
-                    collapsedTasks={collapsedTasks}
-                    dragState={dragState}
-                    rowDragState={rowDragState}
-                    dropTargetId={dropTargetId}
-                    dropPosition={dropPosition}
-                    isUpdating={isUpdating}
-                    showDependencies={showDependencies}
-                    dependencySource={dependencySource}
-                    getTaskWeight={getTaskWeight}
-                    hasChildren={hasChildren}
-                    getChildTasks={getChildTasks}
-                    onTaskUpdate={onTaskUpdate}
-                    onAddSubTask={onAddSubTask}
-                    toggleTaskCollapse={toggleTaskCollapse}
-                    handleRowDragStart={handleRowDragStart}
-                    handleRowDragOver={handleRowDragOver}
-                    handleRowDragLeave={handleRowDragLeave}
-                    handleRowDrop={handleRowDrop}
-                    handleRowDragEnd={handleRowDragEnd}
-                    handleRemoveFromParent={handleRemoveFromParent}
-                    setActiveColorMenu={setActiveColorMenu}
-                    handleDependencyClick={handleDependencyClick}
-                    setModalConfig={setModalConfig}
-                    startDrag={startDrag}
-                />
-            ))}
-        </React.Fragment>
+            {
+                !tIsCollapsed && childTasks.map(child => (
+                    <TaskRow
+                        key={child.id}
+                        task={child}
+                        level={level + 1}
+                        tasks={tasks}
+                        config={config}
+                        viewMode={viewMode}
+                        timeRange={timeRange}
+                        visibleColumns={visibleColumns}
+                        stickyWidth={stickyWidth}
+                        timeline={timeline}
+                        collapsedTasks={collapsedTasks}
+                        dragState={dragState}
+                        rowDragState={rowDragState}
+                        dropTargetId={dropTargetId}
+                        dropPosition={dropPosition}
+                        isUpdating={isUpdating}
+                        showDependencies={showDependencies}
+                        dependencySource={dependencySource}
+                        getTaskWeight={getTaskWeight}
+                        hasChildren={hasChildren}
+                        getChildTasks={getChildTasks}
+                        onTaskUpdate={onTaskUpdate}
+                        onAddSubTask={onAddSubTask}
+                        toggleTaskCollapse={toggleTaskCollapse}
+                        handleRowDragStart={handleRowDragStart}
+                        handleRowDragOver={handleRowDragOver}
+                        handleRowDragLeave={handleRowDragLeave}
+                        handleRowDrop={handleRowDrop}
+                        handleRowDragEnd={handleRowDragEnd}
+                        handleRemoveFromParent={handleRemoveFromParent}
+                        setActiveColorMenu={setActiveColorMenu}
+                        handleDependencyClick={handleDependencyClick}
+                        setModalConfig={setModalConfig}
+                        startDrag={startDrag}
+                    />
+                ))
+            }
+        </React.Fragment >
     );
 };

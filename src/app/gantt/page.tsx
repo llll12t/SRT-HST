@@ -123,6 +123,9 @@ export default function GanttPage() {
     });
     const [savingProgress, setSavingProgress] = useState(false);
 
+    // Track updating tasks for loading state
+    const [updatingTaskIds, setUpdatingTaskIds] = useState<Set<string>>(new Set());
+
     const openProgressModal = (taskId: string) => {
         const task = tasks.find(t => t.id === taskId);
         if (task) {
@@ -676,8 +679,17 @@ export default function GanttPage() {
         );
     }
 
+
+
     const handleTaskUpdate = async (taskId: string, updates: Partial<Task>) => {
         try {
+            // Set loading state
+            setUpdatingTaskIds(prev => {
+                const newSet = new Set(prev);
+                newSet.add(taskId);
+                return newSet;
+            });
+
             // Optimistically update local state for smoothness
             setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
 
@@ -691,6 +703,13 @@ export default function GanttPage() {
             console.error('Error updating task:', error);
             // Revert changes on error (basic version: just re-fetch)
             fetchTasks();
+        } finally {
+            // Clear loading state
+            setUpdatingTaskIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(taskId);
+                return newSet;
+            });
         }
     };
 
@@ -770,6 +789,7 @@ export default function GanttPage() {
                     onOpenProgressModal={openProgressModal}
                     onAddSubTask={handleAddSubTask}
                     onAddTaskToCategory={handleAddTaskToCategory}
+                    updatingTaskIds={updatingTaskIds}
                 />
             )}
 

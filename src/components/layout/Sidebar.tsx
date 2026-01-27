@@ -65,7 +65,7 @@ export default function Sidebar() {
                             key={item.name}
                             href={item.href}
                             className={clsx(
-                                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium',
+                                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-xs font-medium',
                                 isActive
                                     ? 'bg-blue-50 text-blue-700'
                                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'
@@ -123,7 +123,7 @@ export default function Sidebar() {
             {/* Desktop Sidebar */}
             <aside className={clsx(
                 'hidden lg:block fixed left-0 top-0 h-screen bg-white border-r border-gray-200 transition-all duration-200 z-40',
-                collapsed ? 'w-16' : 'w-64'
+                collapsed ? 'w-16' : 'w-56'
             )}>
                 <NavContent />
             </aside>
