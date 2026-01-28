@@ -570,19 +570,19 @@ export default function TasksPage() {
                     <button
                         key={stat.filter}
                         onClick={() => setStatusFilter(stat.filter as StatusFilter)}
-                        className={`p-4 rounded-lg border text-left transition-all ${stat.active
+                        className={`p-4 rounded-md border text-left transition-all ${stat.active
                             ? 'bg-white border-blue-600 ring-1 ring-blue-600 shadow-sm'
-                            : 'bg-white border-gray-100 hover:border-gray-300 hover:shadow-sm'
+                            : 'bg-white border-gray-200 hover:border-gray-300 hover:shadow-sm'
                             }`}
                     >
-                        <p className="text-gray-600 text-xs font-medium">{stat.label}</p>
+                        <p className="text-gray-700 text-xs font-medium">{stat.label}</p>
                         <p className={`text-xl font-semibold mt-0.5 ${stat.color || 'text-gray-900'}`}>{stat.value}</p>
                     </button>
                 ))}
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-lg border border-gray-100 p-4 flex flex-col lg:flex-row gap-3 shadow-sm">
+            <div className="bg-white rounded-md border border-gray-200 p-4 flex flex-col lg:flex-row gap-3 shadow-sm">
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                     <input
@@ -590,14 +590,14 @@ export default function TasksPage() {
                         placeholder="ค้นหาชื่องาน..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0"
+                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black focus:ring-0"
                     />
                 </div>
 
                 <select
                     value={projectFilter}
                     onChange={(e) => setProjectFilter(e.target.value)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                 >
                     <option value="all">ทุกโครงการ</option>
                     {projects.map(p => (
@@ -608,7 +608,7 @@ export default function TasksPage() {
                 <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                 >
                     {categories.map(cat => (
                         <option key={cat} value={cat}>
@@ -620,7 +620,7 @@ export default function TasksPage() {
                 <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as any)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                 >
                     <option value="order">เรียงตามลำดับ</option>
                     <option value="name">เรียงตามชื่อ</option>
@@ -657,19 +657,19 @@ export default function TasksPage() {
                     )}
                 </div>
             ) : (
-                <div className="bg-white rounded-lg border border-gray-100 overflow-hidden shadow-sm">
+                <div className="bg-white rounded-md border border-gray-200 overflow-hidden shadow-sm">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">ชื่องาน</th>
-                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">โครงการ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">วันที่ดำเนินการ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Cost</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Q'ty</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Progress</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">สถานะ</th>
-                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Actions</th>
+                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">ชื่องาน</th>
+                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-800 uppercase tracking-wide">โครงการ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-800 uppercase tracking-wide">วันที่ดำเนินการ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-800 uppercase tracking-wide">Cost</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-800 uppercase tracking-wide">Q'ty</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-800 uppercase tracking-wide">Progress</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-800 uppercase tracking-wide">สถานะ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-800 uppercase tracking-wide">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -864,7 +864,7 @@ export default function TasksPage() {
             {/* Create/Edit Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-lg border border-gray-100 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl">
+                    <div className="bg-white rounded-md border border-gray-200 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl">
                         {/* Header */}
                         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
                             <div>
@@ -899,7 +899,7 @@ export default function TasksPage() {
                                             value={taskForm.category}
                                             onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}
                                             placeholder="เลือกหรือพิมพ์ใหม่..."
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                         <datalist id="category-suggestions">
                                             {[...new Set(
@@ -920,7 +920,7 @@ export default function TasksPage() {
                                             value={taskForm.subcategory}
                                             onChange={(e) => setTaskForm({ ...taskForm, subcategory: e.target.value })}
                                             placeholder="ระบุ (ถ้ามี)..."
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                     </div>
 
@@ -932,7 +932,7 @@ export default function TasksPage() {
                                             value={taskForm.subsubcategory}
                                             onChange={(e) => setTaskForm({ ...taskForm, subsubcategory: e.target.value })}
                                             placeholder="ระบุระดับ 3..."
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                     </div>
 
@@ -947,7 +947,7 @@ export default function TasksPage() {
                                             value={taskForm.name}
                                             onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
                                             placeholder={taskForm.type === 'group' ? 'ชื่อหมวดหมู่ย่อย (Sub-Group)' : 'ระบุชื่องาน...'}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                     </div>
 
@@ -958,7 +958,7 @@ export default function TasksPage() {
                                             required
                                             value={taskForm.projectId}
                                             onChange={(e) => setTaskForm({ ...taskForm, projectId: e.target.value })}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black focus:ring-0 outline-none"
                                         >
                                             <option value="" disabled>เลือกโครงการ...</option>
                                             {projects.map(p => (
@@ -973,7 +973,7 @@ export default function TasksPage() {
                                         <select
                                             value={taskForm.parentTaskId}
                                             onChange={(e) => setTaskForm({ ...taskForm, parentTaskId: e.target.value })}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black focus:ring-0 outline-none"
                                         >
                                             <option value="">หมวดหมู่หลัก</option>
                                             {tasks
@@ -1059,7 +1059,7 @@ export default function TasksPage() {
                                                     step="0.01"
                                                     value={taskForm.cost}
                                                     onChange={(e) => setTaskForm({ ...taskForm, cost: parseFloat(e.target.value) || 0 })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1069,7 +1069,7 @@ export default function TasksPage() {
                                                     value={taskForm.quantity}
                                                     onChange={(e) => setTaskForm({ ...taskForm, quantity: e.target.value })}
                                                     placeholder="e.g. 50 m2"
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1080,7 +1080,7 @@ export default function TasksPage() {
                                                     max="100"
                                                     value={taskForm.progress}
                                                     onChange={(e) => setTaskForm({ ...taskForm, progress: parseFloat(e.target.value) || 0 })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                         </div>
@@ -1094,7 +1094,7 @@ export default function TasksPage() {
                                                     required
                                                     value={taskForm.planStartDate}
                                                     onChange={(e) => setTaskForm({ ...taskForm, planStartDate: e.target.value })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1104,7 +1104,7 @@ export default function TasksPage() {
                                                     required
                                                     value={taskForm.planEndDate}
                                                     onChange={(e) => setTaskForm({ ...taskForm, planEndDate: e.target.value })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-md text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1392,7 +1392,7 @@ export default function TasksPage() {
             {/* Alert/Confirm Modal */}
             {alertDialog.isOpen && (
                 <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
+                    <div className="bg-white rounded-lg shadow-2xl max-w-sm w-full overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
                         <div className="p-6 text-center">
                             <div className={`w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center ${alertDialog.type === 'error' ? 'bg-red-100 text-red-600' :
                                 alertDialog.type === 'success' ? 'bg-green-100 text-green-600' :
@@ -1415,14 +1415,14 @@ export default function TasksPage() {
                                 {(alertDialog.type === 'confirm') && (
                                     <button
                                         onClick={alertDialog.onCancel}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
                                     >
                                         ยกเลิก
                                     </button>
                                 )}
                                 <button
                                     onClick={alertDialog.onConfirm}
-                                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' :
+                                    className={`px-4 py-2 text-sm font-medium text-white rounded-md shadow-sm transition-colors ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' :
                                         alertDialog.type === 'success' ? 'bg-green-600 hover:bg-green-700' :
                                             'bg-black hover:bg-gray-800'
                                         }`}

@@ -49,6 +49,7 @@ interface GanttToolbarProps {
     onToggleDependencies: () => void;
     customDate: Date | null;
     onCustomDateChange: (date: Date | null) => void;
+    onBudgetChange?: (amount: number) => void;
 }
 
 export default function GanttToolbar({
@@ -69,8 +70,23 @@ export default function GanttToolbar({
     showDependencies,
     onToggleDependencies,
     customDate,
-    onCustomDateChange
+    onCustomDateChange,
+    onBudgetChange
 }: GanttToolbarProps) {
+    const [isBudgetEditing, setIsBudgetEditing] = React.useState(false);
+    const [budgetInput, setBudgetInput] = React.useState('');
+
+    React.useEffect(() => {
+        setBudgetInput(budgetStats.totalCost.toString());
+    }, [budgetStats.totalCost]);
+
+    const handleBudgetSubmit = () => {
+        setIsBudgetEditing(false);
+        if (onBudgetChange) {
+            const val = parseFloat(budgetInput.replace(/,/g, ''));
+            if (!isNaN(val)) onBudgetChange(val);
+        }
+    };
     const [showColumnMenu, setShowColumnMenu] = React.useState(false);
 
     // Close menu when clicking outside (simple handling)
@@ -104,8 +120,21 @@ export default function GanttToolbar({
                 <div className="hidden lg:flex items-center gap-6">
                     <div className="flex flex-col">
                         <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Budget</span>
-                        <div className="flex items-baseline gap-1">
-                            <span className="text-sm font-bold text-gray-900 font-mono">{budgetStats.totalCost.toLocaleString()}</span>
+                        <div className="flex items-baseline gap-1" onDoubleClick={() => setIsBudgetEditing(true)}>
+                            {isBudgetEditing ? (
+                                <input 
+                                    autoFocus
+                                    className="w-24 text-sm font-bold font-mono border-b border-blue-500 outline-none"
+                                    value={budgetInput}
+                                    onChange={(e) => setBudgetInput(e.target.value)}
+                                    onBlur={handleBudgetSubmit}
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleBudgetSubmit(); }}
+                                />
+                            ) : (
+                                <span className="text-sm font-bold text-gray-900 font-mono hover:text-blue-600 cursor-pointer" title="Double click to edit">
+                                    {budgetStats.totalCost.toLocaleString()}
+                                </span>
+                            )}
                             <span className="text-[10px] text-gray-500 font-medium">THB</span>
                         </div>
                     </div>

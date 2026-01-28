@@ -43,7 +43,7 @@ interface TaskRowProps {
     handleRemoveFromParent: (taskId: string) => void;
     setActiveColorMenu: (menu: { id: string, type: 'group', top: number, left: number }) => void;
     handleDependencyClick: (taskId: string, side: 'start' | 'end') => void;
-    setModalConfig: (config: any) => void;
+    setModalConfig: (config: { isOpen: boolean; title: string; message: string; type: 'confirm' | 'alert'; onConfirm?: () => void; }) => void;
     startDrag: (e: React.MouseEvent, task: Task, type: DragState['type'], barType?: 'plan' | 'actual') => void;
     loadingIds?: Set<string>;
 }
@@ -123,7 +123,7 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                 onDrop={(e) => handleRowDrop(e, t.id)}
                 onDragEnd={handleRowDragEnd}
             >
-                <div className="sticky left-0 z-[60] bg-white group-hover:bg-gray-50 border-r border-gray-300 flex items-center px-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)]"
+                <div className="sticky left-0 z-[60] bg-white group-hover:bg-gray-50 border-r border-gray-300 flex items-center pl-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)]"
                     style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
 
                     {/* Indent + Collapse toggle */}
@@ -170,15 +170,6 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                 {childTasks.length}
                             </span>
                         )}
-                        {onAddSubTask && t.type === 'group' && (
-                            <button
-                                className="p-0.5 ml-1 hover:bg-blue-100 rounded-sm transition-colors text-blue-500 opacity-0 group-hover:opacity-100"
-                                onClick={(e) => { e.stopPropagation(); onAddSubTask(t.id); }}
-                                title="Add Sub-Group/Task"
-                            >
-                                <Plus className="w-3 h-3" />
-                            </button>
-                        )}
                     </div>
 
                     {/* Drag handle */}
@@ -190,10 +181,22 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                         </div>
                     )}
 
-                    <div className={`flex-1 truncate text-xs transition-colors 
+                    <div className={`flex-1 truncate text-xs transition-colors flex items-center pr-2 
                     ${t.type === 'group' || hasChildren(t.id) ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}
                         title={t.name}>
                         {t.name}
+
+                        {/* Add Task Button for Groups (Moved here) */}
+                        {onAddSubTask && t.type === 'group' && (
+                            <button
+                                className="ml-2 p-0.5 hover:bg-blue-100 rounded-sm transition-colors text-blue-500 opacity-0 group-hover:opacity-100 shrink-0"
+                                onClick={(e) => { e.stopPropagation(); onAddSubTask(t.id); }}
+                                title="Add Sub-Group/Task"
+                            >
+                                <Plus className="w-3 h-3" />
+                            </button>
+                        )}
+
                         {t.parentTaskId && onTaskUpdate && (
                             <button
                                 className="ml-1 text-[9px] text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
@@ -213,33 +216,33 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                     </div>
 
                     {visibleColumns.cost && (
-                        <div className="w-20 text-right text-xs text-gray-600 font-medium font-mono shrink-0">
+                        <div className="w-20 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
                             {isGroup ? (displayCost ? displayCost.toLocaleString() : '-') : (t.cost ? t.cost.toLocaleString() : '-')}
                         </div>
                     )}
                     {visibleColumns.weight && (
-                        <div className="w-14 text-right text-xs text-gray-600 font-medium font-mono shrink-0">
+                        <div className="w-16 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
                             {tWeight.toFixed(2)}%
                         </div>
                     )}
                     {visibleColumns.quantity && (
-                        <div className="w-16 text-right text-xs text-gray-600 font-medium font-mono shrink-0">
+                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pl-2 truncate">
                             {isGroup ? (groupSummary?.count ? `${groupSummary.count} งาน` : '-') : (t.quantity || '-')}
                         </div>
                     )}
                     {visibleColumns.period && (
-                        <div className={`w-[110px] text-right text-[10px] font-mono shrink-0 ${isGroup ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
+                        <div className={`w-[130px] h-full flex items-center justify-start border-l border-gray-200 text-[10px] font-mono shrink-0 pl-2 truncate ${isGroup ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
                             {displayStartDate && displayEndDate ? (
                                 formatDateRange(displayStartDate, displayEndDate)
                             ) : '-'}
                         </div>
                     )}
                     {visibleColumns.progress && (
-                        <div className="w-20 flex items-center justify-end shrink-0 gap-1 pr-1">
+                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-200 shrink-0 gap-1 pl-2">
                             {isGroup ? (
                                 // Groups: Show calculated progress (read-only)
                                 <>
-                                    <span className={`w-[45px] text-right text-xs font-bold font-mono ${displayProgress === 100 ? 'text-green-600' : displayProgress > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
+                                    <span className={`w-[45px] text-left text-xs font-bold font-mono ${displayProgress === 100 ? 'text-green-600' : displayProgress > 0 ? 'text-blue-600' : 'text-gray-400'}`}>
                                         {displayProgress}%
                                     </span>
                                     <div className="w-[22px]"></div>
@@ -268,8 +271,8 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                             </button>
                                         </>
                                     ) : (
-                                        <div className="flex items-center justify-end w-full group/prog-cell gap-1">
-                                            <span className={`w-[45px] text-right text-xs font-bold font-mono ${Number(t.progress) === 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                        <div className="flex items-center justify-start w-full group/prog-cell gap-1">
+                                            <span className={`w-[45px] text-left text-xs font-bold font-mono ${Number(t.progress) === 100 ? 'text-green-600' : 'text-blue-600'}`}>
                                                 {Number(t.progress)}%
                                             </span>
                                             {/* Quick Complete Button */}

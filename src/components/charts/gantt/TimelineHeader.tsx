@@ -53,12 +53,12 @@ export default function TimelineHeader({
                                 </div>
                             )}
                             {visibleColumns.weight && (
-                                <div className={`w-14 justify-end px-2 ${commonHeaderClass}`}>
+                                <div className={`w-16 justify-end px-2 ${commonHeaderClass}`}>
                                     น้ำหนัก
                                 </div>
                             )}
                             {visibleColumns.quantity && (
-                                <div className={`w-16 justify-end px-2 ${commonHeaderClass}`}>
+                                <div className={`w-20 justify-start pl-2 ${commonHeaderClass}`}>
                                     ปริมาณ
                                 </div>
                             )}
@@ -73,12 +73,12 @@ export default function TimelineHeader({
                                 </div>
                             )}
                             {visibleColumns.period && (
-                                <div className={`w-[150px] justify-center px-1 ${commonHeaderClass}`}>
+                                <div className={`w-[130px] justify-start pl-2 ${commonHeaderClass}`}>
                                     ระยะเวลา
                                 </div>
                             )}
                             {visibleColumns.progress && (
-                                <div className={`w-20 justify-center px-1 ${commonHeaderClass}`}>
+                                <div className={`w-20 justify-start pl-2 ${commonHeaderClass}`}>
                                     สถานะ
                                 </div>
                             )}

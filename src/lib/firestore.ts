@@ -80,18 +80,21 @@ export async function deleteProject(projectId: string): Promise<void> {
     const q = query(tasksRef, where('projectId', '==', projectId));
     const snapshot = await getDocs(q);
 
-    const batch = writeBatch(db);
+    // Delete all tasks with chunking
+    const chunkSize = 450;
+    const docs = snapshot.docs;
 
-    // Delete all tasks
-    snapshot.docs.forEach((doc) => {
-        batch.delete(doc.ref);
-    });
+    for (let i = 0; i < docs.length; i += chunkSize) {
+        const chunk = docs.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((doc) => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+    }
 
-    // Delete the project
-    const projectRef = doc(db, 'projects', projectId);
-    batch.delete(projectRef);
-
-    await batch.commit();
+    // Delete the project (separate batch to ensure tasks are gone or just separate call)
+    await deleteDoc(doc(db, 'projects', projectId));
 }
 
 // ==================== TASKS ====================

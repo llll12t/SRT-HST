@@ -7,7 +7,8 @@ import { Download, Calendar, Loader2, FolderKanban, TrendingUp, X, Save } from '
 import Link from 'next/link';
 import { Project, Task } from '@/types/construction';
 import { getProjects, getTasks } from '@/lib/firestore';
-import { format, differenceInDays, parseISO, addDays } from 'date-fns';
+import { format, differenceInDays, parseISO, addDays, isBefore } from 'date-fns';
+import { parseDate } from '@/components/charts/gantt/utils';
 
 export default function SCurvePage() {
     const searchParams = useSearchParams();
@@ -137,14 +138,37 @@ export default function SCurvePage() {
             </div>
 
             {/* S-Curve Chart */}
-            {selectedProject && (
-                <SCurveChart
-                    tasks={tasks}
-                    startDate={selectedProject.startDate}
-                    endDate={selectedProject.endDate}
-                    title={selectedProject.name}
-                />
-            )}
+            {selectedProject && (() => {
+                // Calculate min start from tasks to align S-Curve with work
+                const minTaskStart = tasks.reduce((min, t) => {
+                    if (!t.planStartDate) return min;
+                    const d = parseDate(t.planStartDate);
+                    if (isNaN(d.getTime())) return min;
+                    return !min || isBefore(d, min) ? d : min;
+                }, null as Date | null);
+
+                // If tasks exist, use earliest task start, otherwise project start
+                const chartStart = minTaskStart
+                    ? format(minTaskStart, 'dd/MM/yyyy')
+                    : selectedProject.startDate;
+
+                return (
+                    <SCurveChart
+                        tasks={tasks}
+                        startDate={chartStart}
+                        endDate={selectedProject.endDate}
+                        title={selectedProject.name}
+                        onTaskUpdate={async (taskId, field, value) => {
+                            // Optimistic Update
+                            setTasks(prev => prev.map(t =>
+                                t.id === taskId ? { ...t, [field]: value } : t
+                            ));
+                            // TODO: Call API to save to Firestore
+                            // await updateTask(taskId, { [field]: value });
+                        }}
+                    />
+                );
+            })()}
         </div>
     );
 }

@@ -57,7 +57,7 @@ export default function Sidebar() {
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
+            <nav className="flex-1 p-3 space-y-3 overflow-y-auto">
                 {navigation.map((item) => {
                     const isActive = pathname === item.href;
                     return (
@@ -65,7 +65,7 @@ export default function Sidebar() {
                             key={item.name}
                             href={item.href}
                             className={clsx(
-                                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-xs font-medium',
+                                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors text-sm font-medium',
                                 isActive
                                     ? 'bg-blue-50 text-blue-700'
                                     : 'text-gray-700 hover:text-gray-900 hover:bg-gray-100'

@@ -4,6 +4,7 @@ export interface Project {
     id: string;
     name: string;
     owner: string;
+    code?: string;
     description?: string;
     startDate: string;
     endDate: string;

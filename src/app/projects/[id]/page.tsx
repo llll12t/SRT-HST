@@ -56,6 +56,13 @@ const calcDuration = (start: string, end: string) => {
     }
 };
 
+interface ColorMenuConfig {
+    id: string;
+    type: 'category' | 'group';
+    top: number;
+    left: number;
+}
+
 export default function ProjectDetailPage() {
     const { user } = useAuth();
     const params = useParams();
@@ -127,6 +134,23 @@ export default function ProjectDetailPage() {
         type: 'info' | 'confirm' | 'error';
         onConfirm?: () => void;
     }>({ isOpen: false, title: '', message: '', type: 'info' });
+
+    // Category Colors State (Synced with Gantt)
+    const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
+    const [activeColorMenu, setActiveColorMenu] = useState<ColorMenuConfig | null>(null);
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('gantt_category_colors');
+            if (saved) {
+                try {
+                    setCategoryColors(JSON.parse(saved));
+                } catch (e) {
+                    console.error('Failed to parse category colors', e);
+                }
+            }
+        }
+    }, []);
 
     // Fetch Data
     useEffect(() => {
@@ -949,24 +973,34 @@ export default function ProjectDetailPage() {
     const existingSubcategories = useMemo(() => [...new Set(tasks.map(t => (t as any).subcategory).filter(Boolean))], [tasks]);
 
     // Status Badge
-    const getStatusBadge = (status: string) => {
+    // Status Badge
+    const getStatusBadge = (status: string, progress?: number) => {
+        let displayStatus = status;
+
+        // Auto-update status for display based on progress
+        if (progress === 100) {
+            displayStatus = 'completed';
+        } else if (progress !== undefined && progress > 0 && status === 'not-started') {
+            displayStatus = 'in-progress';
+        }
+
         const configs: Record<string, { class: string; label: string }> = {
-            'completed': { class: 'bg-green-100 text-green-700', label: 'เสร็จสิ้น' },
-            'in-progress': { class: 'bg-blue-100 text-blue-700', label: 'กำลังดำเนินการ' },
-            'not-started': { class: 'bg-gray-100 text-gray-600', label: 'ยังไม่เริ่ม' },
-            'delayed': { class: 'bg-red-100 text-red-700', label: 'ล่าช้า' },
+            'completed': { class: 'bg-emerald-50 text-emerald-700 border border-emerald-200', label: 'เสร็จสิ้น' },
+            'in-progress': { class: 'bg-blue-50 text-blue-700 border border-blue-200', label: 'กำลังดำเนินการ' },
+            'not-started': { class: 'bg-gray-50 text-gray-600 border border-gray-300', label: 'รอดำเนินการ' },
+            'delayed': { class: 'bg-red-50 text-red-700 border border-red-200', label: 'ล่าช้า' },
         };
-        const config = configs[status] || configs['not-started'];
-        return <span className={`px-2 py-0.5 rounded text-xs font-medium ${config.class}`}>{config.label}</span>;
+        const config = configs[displayStatus] || configs['not-started'];
+        return <span className={`px-2.5 py-0.5 rounded-sm text-[10px] uppercase tracking-wide font-semibold ${config.class}`}>{config.label}</span>;
     };
 
     // Progress Bar Component
     const ProgressBar = ({ value, size = 'sm' }: { value: number; size?: 'sm' | 'md' }) => {
         const height = size === 'sm' ? 'h-1.5' : 'h-2';
-        const color = value === 100 ? 'bg-green-500' : value >= 50 ? 'bg-blue-500' : value > 0 ? 'bg-amber-500' : 'bg-gray-300';
+        const color = value === 100 ? 'bg-emerald-500' : value >= 50 ? 'bg-blue-600' : value > 0 ? 'bg-amber-500' : 'bg-gray-300';
         return (
-            <div className={`w-full ${height} bg-gray-200 rounded-full overflow-hidden`}>
-                <div className={`${height} ${color} rounded-full transition-all`} style={{ width: `${Math.min(100, value)}%` }} />
+            <div className={`w-full ${height} bg-gray-100 rounded-sm overflow-hidden border border-gray-300`}>
+                <div className={`${height} ${color} rounded-sm transition-all duration-500 ease-out`} style={{ width: `${Math.min(100, value)}%` }} />
             </div>
         );
     };
@@ -998,161 +1032,150 @@ export default function ProjectDetailPage() {
     const canUpdateProgress = ['admin', 'project_manager', 'engineer'].includes(user?.role || '');
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                    <Link href="/projects" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <ArrowLeft className="w-5 h-5 text-gray-600" />
-                    </Link>
+        <div className="space-y-6 p-6">
+            {/* Header / Toolbar */}
+            <div className="bg-white border border-gray-300 px-6 py-4 flex flex-col md:flex-row items-center justify-between gap-4 sticky top-16 z-20">
+                <div className="flex items-center gap-4 w-full md:w-auto">
+                    <button
+                        onClick={() => router.back()}
+                        className="p-2 hover:bg-gray-100 rounded-sm text-gray-500 hover:text-gray-900 transition-colors"
+                    >
+                        <ArrowLeft className="w-5 h-5" />
+                    </button>
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-                        <p className="text-sm text-gray-500 mt-0.5">{project.description || 'ไม่มีคำอธิบาย'}</p>
+                        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+                            {project?.name}
+                            <span className={`text-[10px] px-2 py-0.5 rounded-sm border ${project?.status === 'completed' ? 'border-green-300 bg-green-50 text-green-700' : 'borderlue-300 bg-blue-50 text-blue-700'}`}>
+                                {project?.status === 'completed' ? 'Completed' : 'Active'}
+                            </span>
+                        </h1>
+                        <p className="text-xs text-gray-500 flex items-center gap-2 mt-1">
+                            <Building2 className="w-3 h-3" />
+                            {project?.code || 'No Code'}
+                            <span className="text-gray-300">|</span>
+                            <Calendar className="w-3 h-3" />
+                            {formatDateTH(project?.startDate)} - {formatDateTH(project?.endDate)}
+                        </p>
                     </div>
                 </div>
-                {canEdit && (
-                    <div className="flex gap-2">
-                        <button
-                            onClick={handleDeleteAllTasks}
-                            className="px-3 py-2 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-2 text-sm font-medium"
-                            title="ลบงานทั้งหมด"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                            ลบทั้งหมด
-                        </button>
-                        <button
-                            onClick={handleExport}
-                            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm font-medium"
-                            title="Export to CSV"
-                        >
-                            <Download className="w-4 h-4" />
-                            Export
-                        </button>
-                        <button
-                            onClick={handleDownloadTemplate}
-                            className="px-3 py-2 bg-green-50 border border-green-200 text-green-700 rounded-lg hover:bg-green-100 transition-colors flex items-center gap-2 text-sm font-medium"
-                            title="ดาวน์โหลดตัวอย่าง CSV"
-                        >
-                            <Download className="w-4 h-4" />
-                            ตัวอย่าง CSV
-                        </button>
-                        <label className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm font-medium cursor-pointer">
-                            <Upload className="w-4 h-4" />
-                            Import
-                            <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-                        </label>
+
+                <div className="flex items-center gap-2 self-end md:self-auto">
+                    {canEdit && (
+                        <>
+                            <div className="hidden md:flex items-center bg-gray-50 rounded-sm p-1 border border-gray-300">
+                                <label htmlFor="import-csv" className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-white hover:border border-gray-300 rounded-sm cursor-pointer transition-all flex items-center gap-2">
+                                    <Upload className="w-3.5 h-3.5" /> Import
+                                    <input
+                                        id="import-csv"
+                                        type="file"
+                                        accept=".csv"
+                                        className="hidden"
+                                        onChange={handleImport}
+                                    />
+                                </label>
+                                <div className="w-px h-4 bg-gray-200 mx-1"></div>
+                                <button
+                                    onClick={handleExport}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-white hover:border border-gray-300 rounded-sm transition-all flex items-center gap-2"
+                                >
+                                    <Download className="w-3.5 h-3.5" /> Export
+                                </button>
+                            </div>
+
+                            <button
+                                onClick={handleDeleteAllTasks}
+                                className="px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-sm transition-colors border border-transparent hover:border-red-300"
+                            >
+                                Clear All
+                            </button>
+
+                            <button
+                                onClick={() => openCreateModal()}
+                                className="px-4 py-2 text-sm font-medium text-white bg-gray-900 hover:bg-black rounded-sm border border-gray-900 transition-all flex items-center gap-2"
+                            >
+                                <Plus className="w-4 h-4" />
+                                เพิ่มงานใหม่
+                            </button>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Project Stats Banner - Compact & Formal */}
+            <div className="bg-white border border-gray-300 px-6 py-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <div className="p-3 bg-gray-50 rounded-sm border border-gray-300 flex flex-col justify-between">
+                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Total Cost</span>
+                        <span className="text-lg font-bold text-gray-900 mt-1">{projectStats.totalCost.toLocaleString()}</span>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-sm border border-gray-300 flex flex-col justify-between">
+                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Progress</span>
+                        <div className="mt-1">
+                            <span className={`text-lg font-bold ${projectStats.overallProgress >= 100 ? 'text-green-600' : 'text-blue-600'}`}>
+                                {projectStats.overallProgress.toFixed(1)}%
+                            </span>
+                            <div className="w-full bg-gray-200 rounded-sm h-1 mt-1.5">
+                                <div className={`h-1 rounded-sm ${projectStats.overallProgress >= 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${projectStats.overallProgress}%` }}></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-sm border border-gray-300 flex flex-col justify-between">
+                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Duration</span>
+                        <span className="text-lg font-bold text-gray-900 mt-1">{calcDuration(project?.startDate || '', project?.endDate || '')} <span className="text-xs font-normal text-gray-500">Days</span></span>
+                    </div>
+                    <div className="p-3 bg-gray-50 rounded-sm border border-gray-300 flex flex-col justify-between">
+                        <span className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">Tasks</span>
+                        <div className="flex items-baseline gap-2 mt-1">
+                            <span className="text-lg font-bold text-gray-900">{projectStats.total}</span>
+                            <span className="text-xs text-gray-500">({projectStats.completed} Done)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {/* Task List Table */}
+            <div className="flex-1 overflow-hidden flex flex-col bg-gray-50">
+                {tasks.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-gray-400">
+                        <div className="w-16 h-16 bg-gray-100 rounded-sm flex items-center justify-center mb-4">
+                            <ListTodo className="w-8 h-8 text-gray-300" />
+                        </div>
+                        <p className="text-lg font-medium text-gray-600">ยังไม่มีรายการงาน</p>
+                        <p className="text-sm">เริ่มต้นด้วยการเพิ่มงานใหม่ หรือนำเข้าจาก CSV</p>
                         <button
                             onClick={() => openCreateModal()}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium"
+                            className="mt-6 px-4 py-2 text-sm font-medium text-white bg-gray-900 hover:bg-black rounded-md shadow-sm transition-all"
                         >
-                            <Plus className="w-4 h-4" />
-                            เพิ่มงานใหม่
+                            เพิ่มงานแรก
                         </button>
                     </div>
-                )}
-            </div>
-
-            {/* Project Overview Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <Target className="w-5 h-5 text-blue-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">ความคืบหน้า</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.overallProgress.toFixed(1)}%</p>
-                        </div>
-                    </div>
-                    <div className="mt-3">
-                        <ProgressBar value={projectStats.overallProgress} size="md" />
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                            <CheckCircle2 className="w-5 h-5 text-green-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">เสร็จสิ้น</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.completed}/{projectStats.total}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                            <Clock className="w-5 h-5 text-amber-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">กำลังดำเนินการ</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.inProgress}</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                            <TrendingUp className="w-5 h-5 text-purple-600" />
-                        </div>
-                        <div>
-                            <p className="text-xs text-gray-500">งบประมาณรวม</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.totalCost.toLocaleString()}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Task Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
-                    <h2 className="font-semibold text-gray-900 flex items-center gap-2">
-                        <ListTodo className="w-5 h-5 text-blue-600" />
-                        รายการงาน ({tasks.length} รายการ)
-                    </h2>
-                </div>
-
-                {tasks.length === 0 ? (
-                    <div className="p-12 text-center">
-                        <ListTodo className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <p className="text-gray-500 mb-4">ยังไม่มีงานในโครงการนี้</p>
-                        {canEdit && (
-                            <button onClick={() => openCreateModal()} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium">
-                                เพิ่มงานแรก
-                            </button>
-                        )}
-                    </div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-white border-b border-gray-100 sticky top-0 z-10">
+                    <div className="flex-1 overflow-auto custom-scrollbar">
+                        <table className="w-full border-collapse bg-white rounded-sm overflow-hidden border border-gray-300">
+                            <thead className="bg-gray-50 border border-gray-300 sticky top-0 z-10">
                                 <tr>
-                                    <th className="w-10 px-2 py-4 bg-white"></th>
-                                    <th className="px-4 py-4 text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider w-1/3">ชื่องาน</th>
-                                    <th className="px-4 py-4 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">วันที่แผน</th>
-                                    <th className="px-4 py-4 text-right text-[10px] font-bold text-gray-400 uppercase tracking-wider">COST</th>
-                                    <th className="px-4 py-4 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">Q'TY</th>
-                                    <th className="px-4 py-4 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider w-32">PROGRESS</th>
-                                    <th className="px-4 py-4 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">สถานะ</th>
-                                    <th className="px-4 py-4 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider w-28">ACTIONS</th>
+                                    <th className="w-10 py-3 text-center"></th>
+                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wide border-r border-transparent">รายการงาน</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wide w-60 border-r border-transparent">ระยะเวลา</th>
+                                    <th className="px-4 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wide w-40 border-r border-transparent">ต้นทุน/ค่าใช้จ่าย</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wide w-24 border-r border-transparent">ปริมาณ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wide w-48 border-r border-transparent">ความคืบหน้า</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wide w-40 border-r border-transparent">สถานะ</th>
+                                    <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wide w-28">จัดการ</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-50">
+                            <tbody className="divide-y divide-gray-100">
                                 {Object.keys(hierarchicalData)
                                     .sort((a, b) => {
                                         if (categoryOrder.length === 0) return 0;
                                         const ia = categoryOrder.indexOf(a);
                                         const ib = categoryOrder.indexOf(b);
-                                        if (ia === -1) return 1;
-                                        if (ib === -1) return -1;
                                         return ia - ib;
                                     })
                                     .map((category) => {
                                         const catData = hierarchicalData[category];
                                         const isCatCollapsed = collapsedCategories.has(category);
+                                        const catColor = categoryColors[category] || '#2563eb'; // Default blue-600
 
                                         // Count total items for badge
                                         let totalItems = catData.tasks.length;
@@ -1177,8 +1200,21 @@ export default function ProjectDetailPage() {
                                                     <td className="px-4 py-4 cursor-pointer" onClick={() => toggleCategory(category)}>
                                                         <div className="flex items-center gap-2">
                                                             {isCatCollapsed ? <ChevronRight className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
-                                                            <Layers className="w-4 h-4 text-blue-600" />
-                                                            <span className="font-semibold text-gray-900">{category}</span>
+                                                            <button
+                                                                className="w-3 h-3 rounded-sm shadow-sm hover:scale-110 transition-transform"
+                                                                style={{ backgroundColor: catColor }}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                                    setActiveColorMenu({
+                                                                        id: category,
+                                                                        type: 'category',
+                                                                        top: rect.bottom,
+                                                                        left: rect.left
+                                                                    });
+                                                                }}
+                                                            />
+                                                            <span className="font-bold text-gray-900">{category}</span>
                                                             <span className="text-xs text-gray-500">({totalItems} รายการ)</span>
                                                             {canEdit && (
                                                                 <button
@@ -1186,7 +1222,7 @@ export default function ProjectDetailPage() {
                                                                         e.stopPropagation();
                                                                         openCreateModal(category);
                                                                     }}
-                                                                    className="ml-2 p-1 text-blue-600 hover:bg-blue-100 rounded-full transition-colors"
+                                                                    className="ml-2 p-1 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                                                                     title="เพิ่มงานในหมวดนี้"
                                                                 >
                                                                     <Plus className="w-4 h-4" />
@@ -1194,15 +1230,18 @@ export default function ProjectDetailPage() {
                                                             )}
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-4 text-center text-xs text-gray-500 font-medium">
+                                                    <td className="px-4 py-4 text-center text-xs text-gray-600 font-medium tabular-nums">
                                                         {catData.stats.minStartDate ? `${formatDateTH(catData.stats.minStartDate)} - ${formatDateTH(catData.stats.maxEndDate)}` : '-'}
                                                     </td>
-                                                    <td className="px-4 py-4 text-right text-sm font-bold text-gray-900">{catData.stats.totalCost.toLocaleString()}</td>
+                                                    <td className="px-4 py-4 text-right text-sm font-bold text-gray-900 tabular-nums">{catData.stats.totalCost.toLocaleString()}</td>
                                                     <td className="px-4 py-4 text-center text-sm text-gray-600">-</td>
                                                     <td className="px-4 py-3">
-                                                        <div className="flex items-center gap-2 justify-center">
-                                                            <div className="w-16"><ProgressBar value={catData.stats.weightedProgress} /></div>
-                                                            <span className="text-sm font-medium text-gray-700">{catData.stats.weightedProgress.toFixed(0)}%</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className="flex-1 bg-gray-100 rounded-sm h-1.5 overflow-hidden border border-gray-300">
+                                                                <div className="h-full rounded-sm transition-all duration-500"
+                                                                    style={{ width: `${catData.stats.weightedProgress}%`, backgroundColor: catColor }}></div>
+                                                            </div>
+                                                            <span className="text-xs text-gray-600 w-8 text-right tabular-nums">{catData.stats.weightedProgress.toFixed(0)}%</span>
                                                         </div>
                                                     </td>
                                                     <td className="px-4 py-3 text-center">-</td>
@@ -1213,29 +1252,43 @@ export default function ProjectDetailPage() {
                                                 {!isCatCollapsed && (
                                                     <>
                                                         {Object.entries(catData.subcategories).map(([subcat, subData]) => {
-                                                            const subKey = `${category}::${subcat}`;
-                                                            const isSubCollapsed = collapsedSubcategories.has(subKey);
+                                                            const uniqueSubcatId = `${category}::${subcat}`;
+                                                            const isSubCollapsed = collapsedSubcategories.has(uniqueSubcatId);
+                                                            const subColor = categoryColors[uniqueSubcatId] || catColor;
 
                                                             // Calculate sub-stats
                                                             const subAllTasks = [...subData.tasks, ...Object.values(subData.subsubcategories).flat()];
                                                             const subStats = getSubcategoryStats(subAllTasks);
 
                                                             return (
-                                                                <React.Fragment key={subKey}>
+                                                                <React.Fragment key={uniqueSubcatId}>
                                                                     {/* Level 2: Subcategory Row */}
                                                                     <tr
                                                                         className="bg-gray-50/50 hover:bg-gray-100 cursor-pointer"
-                                                                        onClick={() => toggleSubcategory(subKey)}
+                                                                        onClick={() => toggleSubcategory(uniqueSubcatId)}
                                                                         onDragOver={handleDragOver}
-                                                                        onDrop={(e) => handleDrop(e, subKey)}
+                                                                        onDrop={(e) => handleDrop(e, uniqueSubcatId)}
                                                                     >
-                                                                        <td className="px-2 py-2.5 border-b border-gray-50 text-center cursor-move text-gray-300 hover:text-gray-500" onClick={(e) => e.stopPropagation()}>
+                                                                        <td className="px-2 py-2.5 border border-gray-50 text-center cursor-move text-gray-300 hover:text-gray-500" onClick={(e) => e.stopPropagation()}>
                                                                             {canEdit && <GripVertical className="w-4 h-4 mx-auto" />}
                                                                         </td>
                                                                         <td className="px-4 py-2.5 pl-10">
                                                                             <div className="flex items-center gap-2">
                                                                                 {isSubCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
-                                                                                <FolderOpen className="w-4 h-4 text-amber-500" />
+                                                                                <button
+                                                                                    className="w-2.5 h-2.5 rounded-sm shadow-sm opacity-80 hover:scale-110 transition-transform"
+                                                                                    style={{ backgroundColor: subColor }}
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                                                        setActiveColorMenu({
+                                                                                            id: uniqueSubcatId,
+                                                                                            type: 'category',
+                                                                                            top: rect.bottom,
+                                                                                            left: rect.left
+                                                                                        });
+                                                                                    }}
+                                                                                />
                                                                                 <span className="font-medium text-gray-800">{subcat}</span>
                                                                                 <span className="text-xs text-gray-400">({subAllTasks.length})</span>
                                                                                 {canEdit && (
@@ -1244,7 +1297,7 @@ export default function ProjectDetailPage() {
                                                                                             e.stopPropagation();
                                                                                             openCreateModal(category, subcat);
                                                                                         }}
-                                                                                        className="ml-2 p-1 text-blue-600 hover:bg-blue-100 rounded-full transition-colors"
+                                                                                        className="ml-2 p-1 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                                                                                         title="เพิ่มงานในหมวดย่อยนี้"
                                                                                     >
                                                                                         <Plus className="w-3 h-3" />
@@ -1252,15 +1305,18 @@ export default function ProjectDetailPage() {
                                                                                 )}
                                                                             </div>
                                                                         </td>
-                                                                        <td className="px-4 py-2.5 text-center text-xs text-gray-500">
+                                                                        <td className="px-4 py-2.5 text-center text-xs text-gray-600 tabular-nums">
                                                                             {subStats.minStartDate ? `${formatDateTH(subStats.minStartDate)} - ${formatDateTH(subStats.maxEndDate)}` : '-'}
                                                                         </td>
-                                                                        <td className="px-4 py-2.5 text-center text-sm font-medium text-gray-700">{subStats.totalCost.toLocaleString()}</td>
+                                                                        <td className="px-4 py-2.5 text-right text-sm font-medium text-gray-900 tabular-nums">{subStats.totalCost.toLocaleString()}</td>
                                                                         <td className="px-4 py-2.5 text-center text-sm text-gray-500">-</td>
                                                                         <td className="px-4 py-2.5">
-                                                                            <div className="flex items-center gap-2 justify-center">
-                                                                                <div className="w-16"><ProgressBar value={subStats.avgProgress} /></div>
-                                                                                <span className="text-sm text-gray-600">{subStats.avgProgress.toFixed(0)}%</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <div className="flex-1 bg-gray-100 rounded-sm h-1.5 overflow-hidden border border-gray-300">
+                                                                                    <div className="h-full rounded-sm transition-all duration-500"
+                                                                                        style={{ width: `${subStats.avgProgress}%`, backgroundColor: subColor }}></div>
+                                                                                </div>
+                                                                                <span className="text-xs text-gray-600 w-8 text-right tabular-nums">{subStats.avgProgress.toFixed(0)}%</span>
                                                                             </div>
                                                                         </td>
                                                                         <td className="px-4 py-2.5 text-center">-</td>
@@ -1272,18 +1328,19 @@ export default function ProjectDetailPage() {
                                                                         <>
                                                                             {/* Level 3: Sub-subcategories */}
                                                                             {Object.entries(subData.subsubcategories).map(([subsub, tasks]) => {
-                                                                                const subsubKey = `${category}::${subcat}::${subsub}`;
-                                                                                const isSubSubCollapsed = collapsedSubSubcategories.has(subsubKey);
+                                                                                const uniqueSubsubId = `${category}::${subcat}::${subsub}`;
+                                                                                const isSubSubCollapsed = collapsedSubSubcategories.has(uniqueSubsubId);
                                                                                 const subSubStats = getSubcategoryStats(tasks);
+                                                                                const subSubColor = categoryColors[uniqueSubsubId] || subColor;
 
                                                                                 return (
                                                                                     <React.Fragment key={subsub}>
                                                                                         {/* Level 3 Group Row */}
                                                                                         <tr
                                                                                             className="hover:bg-gray-50/80 cursor-pointer transition-colors"
-                                                                                            onClick={() => toggleSubSubcategory(subsubKey)}
+                                                                                            onClick={() => toggleSubSubcategory(uniqueSubsubId)}
                                                                                             onDragOver={handleDragOver}
-                                                                                            onDrop={(e) => handleDrop(e, subsubKey)}
+                                                                                            onDrop={(e) => handleDrop(e, uniqueSubsubId)}
                                                                                         >
                                                                                             <td className="px-2 py-2 text-center cursor-move text-gray-300 hover:text-gray-500" onClick={(e) => e.stopPropagation()}>
                                                                                                 {canEdit && <GripVertical className="w-4 h-4 mx-auto" />}
@@ -1291,8 +1348,21 @@ export default function ProjectDetailPage() {
                                                                                             <td className="px-4 py-2 pl-16">
                                                                                                 <div className="flex items-center gap-2">
                                                                                                     {isSubSubCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
-                                                                                                    <div className="w-1.5 h-1.5 rounded-full bg-blue-400" />
-                                                                                                    <span className="text-sm font-medium text-gray-700">{subsub}</span>
+                                                                                                    <button
+                                                                                                        className="w-2 h-2 rounded-sm shadow-sm opacity-60 hover:scale-110 transition-transform"
+                                                                                                        style={{ backgroundColor: subSubColor }}
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                                                                            setActiveColorMenu({
+                                                                                                                id: uniqueSubsubId,
+                                                                                                                type: 'group',
+                                                                                                                top: rect.bottom,
+                                                                                                                left: rect.left
+                                                                                                            });
+                                                                                                        }}
+                                                                                                    />
+                                                                                                    <span className="text-sm font-medium text-gray-700 italic">{subsub}</span>
                                                                                                     <span className="text-xs text-gray-400">({tasks.length})</span>
                                                                                                     {canEdit && (
                                                                                                         <button
@@ -1300,7 +1370,7 @@ export default function ProjectDetailPage() {
                                                                                                                 e.stopPropagation();
                                                                                                                 openCreateModal(category, subcat, subsub);
                                                                                                             }}
-                                                                                                            className="ml-2 p-1 text-blue-600 hover:bg-blue-100 rounded-full transition-colors"
+                                                                                                            className="ml-2 p-1 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-colors"
                                                                                                             title="เพิ่มงานในกลุ่มนี้"
                                                                                                         >
                                                                                                             <Plus className="w-3 h-3" />
@@ -1308,15 +1378,18 @@ export default function ProjectDetailPage() {
                                                                                                     )}
                                                                                                 </div>
                                                                                             </td>
-                                                                                            <td className="px-4 py-2 text-center text-xs text-gray-500">
+                                                                                            <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
                                                                                                 {subSubStats.minStartDate ? `${formatDateTH(subSubStats.minStartDate)} - ${formatDateTH(subSubStats.maxEndDate)}` : '-'}
                                                                                             </td>
-                                                                                            <td className="px-4 py-2 text-center text-sm font-medium text-gray-600">{subSubStats.totalCost.toLocaleString()}</td>
+                                                                                            <td className="px-4 py-2 text-right text-xs text-gray-900 tabular-nums">{subSubStats.totalCost.toLocaleString()}</td>
                                                                                             <td className="px-4 py-2 text-center text-sm text-gray-500">-</td>
                                                                                             <td className="px-4 py-2">
-                                                                                                <div className="flex items-center gap-2 justify-center">
-                                                                                                    <div className="w-12"><ProgressBar value={subSubStats.avgProgress} /></div>
-                                                                                                    <span className="text-xs text-gray-500">{subSubStats.avgProgress.toFixed(0)}%</span>
+                                                                                                <div className="flex items-center gap-2">
+                                                                                                    <div className="flex-1 bg-gray-100 rounded-sm h-1 overflow-hidden border border-gray-300">
+                                                                                                        <div className="h-full rounded-sm transition-all duration-500"
+                                                                                                            style={{ width: `${subSubStats.avgProgress}%`, backgroundColor: subSubColor }}></div>
+                                                                                                    </div>
+                                                                                                    <span className="text-xs text-gray-600 w-8 text-right tabular-nums">{subSubStats.avgProgress.toFixed(0)}%</span>
                                                                                                 </div>
                                                                                             </td>
                                                                                             <td className="px-4 py-2 text-center">-</td>
@@ -1336,35 +1409,34 @@ export default function ProjectDetailPage() {
                                                                                                 <td className="px-2 py-2 text-center cursor-move text-gray-400 hover:text-gray-600">
                                                                                                     {canEdit && <GripVertical className="w-4 h-4 mx-auto" />}
                                                                                                 </td>
-                                                                                                <td className="px-4 py-2 pl-24 border-l-2 border-transparent hover:border-blue-200">
-                                                                                                    <span className="text-sm text-gray-600">{task.name}</span>
+                                                                                                <td className="px-4 py-2 pl-24 border-l-2 border-transparent hover:borderlue-200">
+                                                                                                    <span className="text-sm text-gray-900 font-medium">{task.name}</span>
                                                                                                 </td>
-                                                                                                <td className="px-4 py-2 text-center text-xs text-gray-500">
-                                                                                                    <div className="flex flex-col">
-                                                                                                        <span>{formatDateTH(task.planStartDate)}</span>
-                                                                                                        <span className="text-[10px] text-gray-400">- {formatDateTH(task.planEndDate)}</span>
-                                                                                                    </div>
+                                                                                                <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
+                                                                                                    {formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}
                                                                                                 </td>
-                                                                                                <td className="px-4 py-2 text-right text-xs text-gray-600">
+                                                                                                <td className="px-4 py-2 text-right text-xs text-gray-900 tabular-nums">
                                                                                                     {(task.cost || 0).toLocaleString()}
                                                                                                 </td>
                                                                                                 <td className="px-4 py-2 text-center text-xs text-gray-500">{task.quantity || '-'}</td>
                                                                                                 <td className="px-4 py-2">
-                                                                                                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                                                                                                        <div className={`h-full ${task.progress === 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${task.progress}%` }}></div>
+                                                                                                    <div className="flex items-center gap-2">
+                                                                                                        <div className="flex-1 bg-gray-100 rounded-sm h-1.5 overflow-hidden border border-gray-300">
+                                                                                                            <div className={`h-full ${task.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${task.progress}%` }}></div>
+                                                                                                        </div>
+                                                                                                        <span className="text-xs text-gray-600 w-8 text-right tabular-nums">{task.progress}%</span>
                                                                                                     </div>
-                                                                                                    <div className="text-[10px] text-center mt-0.5 text-gray-400">{task.progress}%</div>
                                                                                                 </td>
                                                                                                 <td className="px-4 py-2 text-center">
-                                                                                                    {getStatusBadge(task.status)}
+                                                                                                    {getStatusBadge(task.status, task.progress)}
                                                                                                 </td>
                                                                                                 <td className="px-4 py-2">
-                                                                                                    <div className="flex items-center justify-center gap-1">
-                                                                                                        {canUpdateProgress && <button onClick={() => openProgressModal(task)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><TrendingUp className="w-4 h-4" /></button>}
+                                                                                                    <div className="flex items-center justify-center gap-1 opacity-100">
+                                                                                                        {canUpdateProgress && <button onClick={() => openProgressModal(task)} className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"><TrendingUp className="w-4 h-4" /></button>}
                                                                                                         {canEdit && (
                                                                                                             <>
-                                                                                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-500 hover:bg-gray-100 rounded"><Edit2 className="w-4 h-4" /></button>
-                                                                                                                <button onClick={() => handleDelete(task)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                                                                                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-all"><Edit2 className="w-4 h-4" /></button>
+                                                                                                                <button onClick={() => handleDelete(task)} className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"><Trash2 className="w-4 h-4" /></button>
                                                                                                             </>
                                                                                                         )}
                                                                                                     </div>
@@ -1389,34 +1461,33 @@ export default function ProjectDetailPage() {
                                                                                         {canEdit && <GripVertical className="w-4 h-4 mx-auto" />}
                                                                                     </td>
                                                                                     <td className="px-4 py-2 pl-16 border-l-2 border-transparent hover:border-amber-200">
-                                                                                        <span className="text-sm text-gray-800">{task.name}</span>
+                                                                                        <span className="text-sm text-gray-900 font-medium">{task.name}</span>
                                                                                     </td>
-                                                                                    <td className="px-4 py-2 text-center text-xs text-gray-500">
-                                                                                        <div className="flex flex-col">
-                                                                                            <span>{formatDateTH(task.planStartDate)}</span>
-                                                                                            <span className="text-[10px] text-gray-400">- {formatDateTH(task.planEndDate)}</span>
-                                                                                        </div>
+                                                                                    <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
+                                                                                        {formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}
                                                                                     </td>
-                                                                                    <td className="px-4 py-2 text-right text-xs text-gray-600">
+                                                                                    <td className="px-4 py-2 text-right text-xs text-gray-900 tabular-nums">
                                                                                         {(task.cost || 0).toLocaleString()}
                                                                                     </td>
                                                                                     <td className="px-4 py-2 text-center text-xs text-gray-500">{task.quantity || '-'}</td>
                                                                                     <td className="px-4 py-2">
-                                                                                        <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                                                                                            <div className={`h-full ${task.progress === 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${task.progress}%` }}></div>
+                                                                                        <div className="flex items-center gap-2">
+                                                                                            <div className="flex-1 bg-gray-100 rounded-sm h-1.5 overflow-hidden border border-gray-300">
+                                                                                                <div className={`h-full ${task.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${task.progress}%` }}></div>
+                                                                                            </div>
+                                                                                            <span className="text-xs text-gray-600 w-8 text-right tabular-nums">{task.progress}%</span>
                                                                                         </div>
-                                                                                        <div className="text-[10px] text-center mt-0.5 text-gray-400">{task.progress}%</div>
                                                                                     </td>
                                                                                     <td className="px-4 py-2 text-center">
-                                                                                        {getStatusBadge(task.status)}
+                                                                                        {getStatusBadge(task.status, task.progress)}
                                                                                     </td>
-                                                                                    <td className="px-4 py-2">
+                                                                                    <td className="px-4 py-2 text-center">
                                                                                         <div className="flex items-center justify-center gap-1">
-                                                                                            {canUpdateProgress && <button onClick={() => openProgressModal(task)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><TrendingUp className="w-4 h-4" /></button>}
+                                                                                            {canUpdateProgress && <button onClick={() => openProgressModal(task)} className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"><TrendingUp className="w-4 h-4" /></button>}
                                                                                             {canEdit && (
                                                                                                 <>
-                                                                                                    <button onClick={() => openEditModal(task)} className="p-1 text-gray-500 hover:bg-gray-100 rounded"><Edit2 className="w-4 h-4" /></button>
-                                                                                                    <button onClick={() => handleDelete(task)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                                                                                                    <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-all"><Edit2 className="w-4 h-4" /></button>
+                                                                                                    <button onClick={() => handleDelete(task)} className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"><Trash2 className="w-4 h-4" /></button>
                                                                                                 </>
                                                                                             )}
                                                                                         </div>
@@ -1442,26 +1513,30 @@ export default function ProjectDetailPage() {
                                                                 <td className="px-2 py-2 text-center cursor-move text-gray-400 hover:text-gray-600">
                                                                     {canEdit && <GripVertical className="w-4 h-4 mx-auto" />}
                                                                 </td>
-                                                                <td className="px-4 py-2 pl-12 border-l-2 border-transparent hover:border-blue-200">
-                                                                    <span className="text-sm text-gray-800">{task.name}</span>
+                                                                <td className="px-4 py-2 pl-12 border-l-2 border-transparent hover:borderlue-200">
+                                                                    <span className="text-sm text-gray-900 font-medium">{task.name}</span>
                                                                 </td>
-                                                                <td className="px-4 py-2 text-center text-xs text-gray-500">{formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}</td>
-                                                                <td className="px-4 py-2 text-center text-sm text-gray-600">{task.cost?.toLocaleString()}</td>
-                                                                <td className="px-4 py-2 text-center text-sm text-gray-500">{task.quantity}</td>
+                                                                <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
+                                                                    {formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}
+                                                                </td>
+                                                                <td className="px-4 py-2 text-right text-xs text-gray-900 tabular-nums">{task.cost?.toLocaleString()}</td>
+                                                                <td className="px-4 py-2 text-center text-xs text-gray-500">{task.quantity || '-'}</td>
                                                                 <td className="px-4 py-2">
-                                                                    <div className="flex items-center gap-2 justify-center">
-                                                                        <div className="w-12"><ProgressBar value={task.progress} /></div>
-                                                                        <span className="text-xs text-gray-500">{task.progress}%</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className="flex-1 bg-gray-100 rounded-sm h-1.5 overflow-hidden border border-gray-300">
+                                                                            <div className={`h-full ${task.progress === 100 ? 'bg-emerald-500' : 'bg-blue-600'}`} style={{ width: `${task.progress}%` }}></div>
+                                                                        </div>
+                                                                        <span className="text-xs text-gray-600 w-8 text-right tabular-nums">{task.progress}%</span>
                                                                     </div>
                                                                 </td>
-                                                                <td className="px-4 py-2 text-center">{getStatusBadge(task.status)}</td>
+                                                                <td className="px-4 py-2 text-center">{getStatusBadge(task.status, task.progress)}</td>
                                                                 <td className="px-4 py-2">
-                                                                    <div className="flex items-center justify-center gap-1">
-                                                                        {canUpdateProgress && <button onClick={() => openProgressModal(task)} className="p-1 text-blue-600 hover:bg-blue-50 rounded"><TrendingUp className="w-4 h-4" /></button>}
+                                                                    <div className="flex items-center justify-center gap-1 opacity-100">
+                                                                        {canUpdateProgress && <button onClick={() => openProgressModal(task)} className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-all"><TrendingUp className="w-4 h-4" /></button>}
                                                                         {canEdit && (
                                                                             <>
-                                                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-500 hover:bg-gray-100 rounded"><Edit2 className="w-4 h-4" /></button>
-                                                                                <button onClick={() => handleDelete(task)} className="p-1 text-red-500 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4" /></button>
+                                                                                <button onClick={() => openEditModal(task)} className="p-1 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-md transition-all"><Edit2 className="w-4 h-4" /></button>
+                                                                                <button onClick={() => handleDelete(task)} className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-all"><Trash2 className="w-4 h-4" /></button>
                                                                             </>
                                                                         )}
                                                                     </div>
@@ -1482,16 +1557,16 @@ export default function ProjectDetailPage() {
             {/* Create/Edit Task Modal */}
             {
                 isModalOpen && (
-                    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]">
-                        <div className="bg-white rounded-lg w-full max-w-4xl shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]">
-                            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-white rounded-t-lg shrink-0">
+                    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]">
+                        <div className="bg-white rounded-sm w-full max-w-4xl border border-gray-300 flex flex-col max-h-[90vh]">
+                            <div className="flex items-center justify-between px-6 py-4 border border-gray-100 bg-white rounded-t-sm shrink-0">
                                 <div>
-                                    <h2 className="text-xl font-semibold text-gray-800">
+                                    <h2 className="text-lg font-bold text-gray-900">
                                         {editingTask ? 'แก้ไขรายละเอียดงาน' : 'เพิ่มรายการงานใหม่'}
                                     </h2>
                                 </div>
-                                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
-                                    <X className="w-6 h-6" />
+                                <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-900 transition-colors bg-gray-50 hover:bg-gray-100 p-1.5 rounded-sm">
+                                    <X className="w-5 h-5" />
                                 </button>
                             </div>
 
@@ -1508,7 +1583,7 @@ export default function ProjectDetailPage() {
                                                 required
                                                 value={taskForm.category}
                                                 onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}
-                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
+                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all placeholder:text-gray-400"
                                             />
                                         </div>
                                         <div>
@@ -1518,7 +1593,7 @@ export default function ProjectDetailPage() {
                                                 list="subcategories"
                                                 value={taskForm.subcategory}
                                                 onChange={(e) => setTaskForm({ ...taskForm, subcategory: e.target.value })}
-                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
+                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all placeholder:text-gray-400"
                                             />
                                         </div>
                                         <div>
@@ -1527,7 +1602,7 @@ export default function ProjectDetailPage() {
                                                 type="text"
                                                 value={taskForm.subsubcategory}
                                                 onChange={(e) => setTaskForm({ ...taskForm, subsubcategory: e.target.value })}
-                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
+                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all placeholder:text-gray-400"
                                             />
                                         </div>
                                     </div>
@@ -1549,7 +1624,7 @@ export default function ProjectDetailPage() {
                                             value={taskForm.name}
                                             onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
                                             placeholder="เช่น งานขุดดินฐานราก"
-                                            className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all placeholder:text-gray-400"
                                         />
                                     </div>
 
@@ -1574,7 +1649,7 @@ export default function ProjectDetailPage() {
                                                             setTaskForm(prev => ({ ...prev, planStartDate: newStart }));
                                                         }
                                                     }}
-                                                    className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all"
                                                 />
                                             </div>
                                         </div>
@@ -1597,7 +1672,7 @@ export default function ProjectDetailPage() {
                                                         setTaskForm(prev => ({ ...prev, planDuration: duration }));
                                                     }
                                                 }}
-                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-blue-600 font-semibold text-center focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
+                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 font-semibold text-center focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all"
                                             />
                                         </div>
                                         <div>
@@ -1606,7 +1681,7 @@ export default function ProjectDetailPage() {
                                                 type="date"
                                                 value={taskForm.planEndDate}
                                                 readOnly
-                                                className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-500 cursor-not-allowed"
+                                                className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-sm text-sm text-gray-500 cursor-not-allowed"
                                             />
                                         </div>
                                     </div>
@@ -1620,7 +1695,7 @@ export default function ProjectDetailPage() {
                                                 min="0"
                                                 value={taskForm.cost}
                                                 onChange={(e) => setTaskForm({ ...taskForm, cost: parseFloat(e.target.value) || 0 })}
-                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
+                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all"
                                                 placeholder="0"
                                             />
                                         </div>
@@ -1631,7 +1706,7 @@ export default function ProjectDetailPage() {
                                                 value={taskForm.quantity}
                                                 onChange={(e) => setTaskForm({ ...taskForm, quantity: e.target.value })}
                                                 placeholder="เช่น 20 ตร.ม."
-                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
+                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all placeholder:text-gray-400"
                                             />
                                         </div>
                                         <div>
@@ -1642,7 +1717,7 @@ export default function ProjectDetailPage() {
                                                 value={taskForm.responsible}
                                                 onChange={(e) => setTaskForm({ ...taskForm, responsible: e.target.value })}
                                                 placeholder="ระบุชื่อ"
-                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all placeholder:text-gray-300"
+                                                className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm text-gray-900 focus:ring-1 focus:ring-black focus:borderlack outline-none transition-all placeholder:text-gray-400"
                                             />
                                         </div>
                                     </div>
@@ -1650,18 +1725,18 @@ export default function ProjectDetailPage() {
                             </div>
 
                             {/* Footer Actions */}
-                            <div className="flex items-center justify-end gap-3 px-8 py-5 bg-gray-50 border-t border-gray-100 rounded-b-lg shrink-0">
+                            <div className="flex items-center justify-end gap-3 px-6 py-4 bg-gray-50 border-t border-gray-100 rounded-b-sm shrink-0">
                                 <button
                                     type="button"
                                     onClick={() => setIsModalOpen(false)}
-                                    className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-200 transition-all"
+                                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-sm hover:bg-gray-50 focus:outline-none transition-all"
                                 >
                                     ยกเลิก
                                 </button>
                                 <button
                                     onClick={handleSubmit}
                                     disabled={saving}
-                                    className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50 shadow-sm transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transform active:scale-95"
+                                    className="px-4 py-2 text-sm font-medium text-white bg-gray-900 border border-transparent rounded-sm hover:bg-black focus:outline-none transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
                                     {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                     {editingTask ? 'บันทึกการแก้ไข' : 'สร้างงานใหม่'}
@@ -1676,18 +1751,18 @@ export default function ProjectDetailPage() {
             {
                 isProgressModalOpen && (
                     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                        <div className="bg-white rounded-xl w-full max-w-md shadow-xl">
-                            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+                        <div className="bg-white rounded-sm w-full max-w-md border border-gray-300">
+                            <div className="flex items-center justify-between px-6 py-4 border border-gray-300 bg-gray-50 rounded-t-sm">
                                 <h2 className="text-lg font-bold text-gray-900">อัปเดทความคืบหน้า</h2>
-                                <button onClick={() => setIsProgressModalOpen(false)} className="p-2 hover:bg-gray-100 rounded-full">
-                                    <X className="w-5 h-5 text-gray-500" />
+                                <button onClick={() => setIsProgressModalOpen(false)} className="p-1.5 hover:bg-gray-200 rounded-sm transition-colors">
+                                    <X className="w-4 h-4 text-gray-500" />
                                 </button>
                             </div>
                             <div className="p-6 space-y-4">
-                                <div className="bg-gray-50 p-3 rounded-lg">
+                                <div className="bg-gray-50 p-3 rounded-sm">
                                     <p className="text-xs text-gray-500">งาน</p>
                                     <p className="font-medium text-gray-900">{progressForm.taskName}</p>
-                                    <div className="mt-2 pt-2 border-t border-gray-200 flex items-center text-xs text-gray-500 gap-2">
+                                    <div className="mt-2 pt-2 border-t border-gray-300 flex items-center text-xs text-gray-500 gap-2">
                                         <span className="font-medium">แผนงาน:</span>
                                         <span>{formatDateTH(progressForm.planStartDate)} - {formatDateTH(progressForm.planEndDate)}</span>
                                     </div>
@@ -1703,7 +1778,7 @@ export default function ProjectDetailPage() {
                                             step="5"
                                             value={progressForm.newProgress}
                                             onChange={(e) => setProgressForm({ ...progressForm, newProgress: parseInt(e.target.value) })}
-                                            className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                                            className="flex-1 h-2 bg-gray-200 rounded-sm appearance-none cursor-pointer accent-black"
                                         />
                                         <span className="text-2xl font-bold text-gray-900 w-16 text-right">{progressForm.newProgress}%</span>
                                     </div>
@@ -1713,7 +1788,7 @@ export default function ProjectDetailPage() {
                                                 key={v}
                                                 type="button"
                                                 onClick={() => setProgressForm({ ...progressForm, newProgress: v })}
-                                                className={`px-2 py-1 text-xs rounded ${progressForm.newProgress === v ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                                className={`px-2 py-1 text-xs rounded-sm font-medium border ${progressForm.newProgress === v ? 'bg-black text-white borderlack' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
                                             >
                                                 {v}%
                                             </button>
@@ -1728,7 +1803,7 @@ export default function ProjectDetailPage() {
                                             type="date"
                                             value={progressForm.actualStartDate}
                                             onChange={(e) => setProgressForm({ ...progressForm, actualStartDate: e.target.value })}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:ring-1 focus:ring-black focus:borderlack"
                                         />
                                     </div>
                                     <div>
@@ -1738,19 +1813,19 @@ export default function ProjectDetailPage() {
                                             value={progressForm.actualEndDate}
                                             onChange={(e) => setProgressForm({ ...progressForm, actualEndDate: e.target.value })}
                                             disabled={progressForm.newProgress < 100}
-                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-100"
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm disabled:bg-gray-50 focus:ring-1 focus:ring-black focus:borderlack"
                                         />
                                     </div>
                                 </div>
 
-                                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
-                                    <button type="button" onClick={() => setIsProgressModalOpen(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg text-sm font-medium">
+                                <div className="flex justify-end gap-3 pt-4 border-t border-gray-300">
+                                    <button type="button" onClick={() => setIsProgressModalOpen(false)} className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-sm text-sm font-medium border border-gray-300">
                                         ยกเลิก
                                     </button>
                                     <button
                                         onClick={handleProgressSubmit}
                                         disabled={savingProgress}
-                                        className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
+                                        className="px-6 py-2 bg-black text-white rounded-sm hover:bg-gray-800 text-sm font-medium flex items-center gap-2 disabled:opacity-50"
                                     >
                                         {savingProgress && <Loader2 className="w-4 h-4 animate-spin" />}
                                         บันทึก
@@ -1766,7 +1841,7 @@ export default function ProjectDetailPage() {
             {
                 alertDialog.isOpen && (
                     <div className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 text-center">
+                        <div className="bg-white rounded-sm shadow-none border border-gray-300 max-w-sm w-full p-6 text-center">
                             <div className={`w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center ${alertDialog.type === 'error' ? 'bg-red-100' : alertDialog.type === 'confirm' ? 'bg-blue-100' : 'bg-gray-100'}`}>
                                 {alertDialog.type === 'error' ? <AlertTriangle className="w-6 h-6 text-red-600" /> : <Info className="w-6 h-6 text-blue-600" />}
                             </div>
@@ -1774,13 +1849,13 @@ export default function ProjectDetailPage() {
                             <p className="text-sm text-gray-500 mb-6">{alertDialog.message}</p>
                             <div className="flex gap-3 justify-center">
                                 {alertDialog.type === 'confirm' && (
-                                    <button onClick={() => setAlertDialog(prev => ({ ...prev, isOpen: false }))} className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                                    <button onClick={() => setAlertDialog(prev => ({ ...prev, isOpen: false }))} className="px-4 py-2 text-gray-700 bg-gray-100 rounded-sm hover:bg-gray-200 text-sm font-medium">
                                         ยกเลิก
                                     </button>
                                 )}
                                 <button
                                     onClick={alertDialog.onConfirm || (() => setAlertDialog(prev => ({ ...prev, isOpen: false })))}
-                                    className={`px-4 py-2 text-white rounded-lg text-sm font-medium ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                    className={`px-4 py-2 text-white rounded-sm text-sm font-medium ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-black hover:bg-gray-800'}`}
                                 >
                                     ตกลง
                                 </button>
@@ -1789,6 +1864,46 @@ export default function ProjectDetailPage() {
                     </div>
                 )
             }
-        </div >
+            {/* Color Menu Popup */}
+            {activeColorMenu && (
+                <>
+                    <div
+                        className="fixed inset-0 z-[998]"
+                        onClick={() => setActiveColorMenu(null)}
+                    />
+                    <div
+                        className="fixed z-[999] bg-white rounded-sm shadow-none border border-gray-300 p-3 w-40"
+                        style={{ top: activeColorMenu.top, left: activeColorMenu.left }}
+                    >
+                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Select Color</div>
+                        <div className="grid grid-cols-4 gap-2">
+                            {[
+                                '#3b82f6', // Blue
+                                '#ef4444', // Red
+                                '#22c55e', // Green
+                                '#eab308', // Yellow
+                                '#a855f7', // Purple
+                                '#ec4899', // Pink
+                                '#f97316', // Orange
+                                '#6b7280'  // Gray
+                            ].map(color => (
+                                <button
+                                    key={color}
+                                    className="w-6 h-6 rounded-full border border-gray-300 hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400"
+                                    style={{ backgroundColor: color }}
+                                    onClick={() => {
+                                        const newColors = { ...categoryColors, [activeColorMenu.id]: color };
+                                        setCategoryColors(newColors);
+                                        localStorage.setItem('gantt_category_colors', JSON.stringify(newColors));
+                                        setActiveColorMenu(null);
+                                    }}
+                                    title={color}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                </>
+            )}
+        </div>
     );
 }

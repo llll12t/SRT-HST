@@ -1,6 +1,18 @@
 import { Task } from '@/types/construction';
-import { differenceInDays, parseISO, isBefore, isAfter, addDays, isSameDay, format } from 'date-fns';
+import { differenceInDays, parseISO, isBefore, isAfter, addDays, isSameDay, format, isValid } from 'date-fns';
 import { ViewMode, GanttConfig, DragState, DateRange } from './types';
+
+export const parseDate = (dateStr: string): Date => {
+    if (!dateStr) return new Date(NaN);
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+        const day = parseInt(parts[0], 10);
+        const month = parseInt(parts[1], 10) - 1;
+        const year = parseInt(parts[2], 10);
+        return new Date(year, month, day);
+    }
+    return parseISO(dateStr);
+};
 
 export const isWeekend = (date: Date) => {
     const day = date.getDay();
@@ -37,8 +49,8 @@ export const getCategorySummary = (catTasks: Task[], getTaskWeight?: (t: Task) =
 
     catTasks.filter(t => t.type !== 'group').forEach(t => {
         if (!t.planStartDate || !t.planEndDate) return;
-        const start = parseISO(t.planStartDate);
-        const end = parseISO(t.planEndDate);
+        const start = parseDate(t.planStartDate);
+        const end = parseDate(t.planEndDate);
         if (!minDate || isBefore(start, minDate)) minDate = start;
         if (!maxDate || isAfter(end, maxDate)) maxDate = end;
     });
@@ -52,6 +64,20 @@ export const getCategorySummary = (catTasks: Task[], getTaskWeight?: (t: Task) =
     return { totalCost, totalWeight, avgProgress, count: catTasks.length, dateRange };
 };
 
+
+export const getCoordinateX = (
+    date: Date,
+    chartStart: Date,
+    config: { cellWidth: number },
+    viewMode: ViewMode
+) => {
+    const diff = differenceInDays(date, chartStart);
+    if (viewMode === 'day') return diff * config.cellWidth;
+    if (viewMode === 'week') return (diff / 7) * config.cellWidth;
+    // Month approximate
+    return (diff / 30.44) * config.cellWidth;
+};
+
 export const getCategoryBarStyle = (
     dateRange: { start: Date; end: Date; days: number },
     viewMode: ViewMode,
@@ -59,19 +85,16 @@ export const getCategoryBarStyle = (
     timeRange: DateRange
 ) => {
     const chartStart = timeRange.start;
-    const startOffsetDays = differenceInDays(dateRange.start, chartStart);
     const durationDays = dateRange.days;
 
-    let leftPx = 0, widthPx = 0;
+    const leftPx = getCoordinateX(dateRange.start, chartStart, config, viewMode);
+    let widthPx = 0;
 
     if (viewMode === 'day') {
-        leftPx = startOffsetDays * config.cellWidth;
         widthPx = durationDays * config.cellWidth;
     } else if (viewMode === 'week') {
-        leftPx = (startOffsetDays / 7) * config.cellWidth;
         widthPx = (durationDays / 7) * config.cellWidth;
     } else if (viewMode === 'month') {
-        leftPx = (startOffsetDays / 30.44) * config.cellWidth;
         widthPx = (durationDays / 30.44) * config.cellWidth;
     }
 
@@ -89,7 +112,7 @@ export const getActualDates = (
     let actualStart: Date, actualEnd: Date;
 
     if (!isUpdating && dragState && dragState.taskId === task.id && dragState.barType === 'actual') {
-        actualStart = dragState.currentStart || parseISO(task.actualStartDate || task.planStartDate);
+        actualStart = dragState.currentStart || parseDate(task.actualStartDate || task.planStartDate);
         actualEnd = dragState.currentEnd || actualStart;
     } else {
         const hasActualStart = task.actualStartDate && task.actualStartDate.length > 0;
@@ -99,15 +122,15 @@ export const getActualDates = (
         if (!hasActualStart && !hasProgress) return null;
 
         if (hasActualStart) {
-            actualStart = parseISO(task.actualStartDate!);
+            actualStart = parseDate(task.actualStartDate!);
         } else {
-            actualStart = parseISO(task.planStartDate);
+            actualStart = parseDate(task.planStartDate);
         }
 
         if (hasActualEnd) {
-            actualEnd = parseISO(task.actualEndDate!);
+            actualEnd = parseDate(task.actualEndDate!);
         } else if (hasProgress) {
-            const plannedDuration = differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1;
+            const plannedDuration = differenceInDays(parseDate(task.planEndDate), parseDate(task.planStartDate)) + 1;
             const progressDays = Math.round(plannedDuration * (Number(task.progress) / 100));
             actualEnd = new Date(actualStart);
             actualEnd.setDate(actualEnd.getDate() + Math.max(0, progressDays - 1));
@@ -145,12 +168,12 @@ export const getBarStyle = (
 
     if (!isUpdating && dragState && dragState.taskId === task.id && type === dragState.barType) {
         // Dragging this specific bar
-        taskStart = dragState.currentStart || parseISO(task.planStartDate);
-        taskEnd = dragState.currentEnd || parseISO(task.planEndDate);
+        taskStart = dragState.currentStart || parseDate(task.planStartDate);
+        taskEnd = dragState.currentEnd || parseDate(task.planEndDate);
     } else {
         if (type === 'plan') {
-            taskStart = parseISO(task.planStartDate);
-            taskEnd = parseISO(task.planEndDate);
+            taskStart = parseDate(task.planStartDate);
+            taskEnd = parseDate(task.planEndDate);
 
             if (dragDeltaDays !== 0) {
                 taskStart = addDays(taskStart, dragDeltaDays);
@@ -165,20 +188,15 @@ export const getBarStyle = (
         }
     }
 
-    const startOffsetDays = differenceInDays(taskStart, chartStart);
     const durationDays = differenceInDays(taskEnd, taskStart) + 1;
-
-    let leftPx = 0;
+    const leftPx = getCoordinateX(taskStart, chartStart, config, viewMode);
     let widthPx = 0;
 
     if (viewMode === 'day') {
-        leftPx = startOffsetDays * config.cellWidth;
         widthPx = durationDays * config.cellWidth;
     } else if (viewMode === 'week') {
-        leftPx = (startOffsetDays / 7) * config.cellWidth;
         widthPx = (durationDays / 7) * config.cellWidth;
     } else if (viewMode === 'month') {
-        leftPx = (startOffsetDays / 30.44) * config.cellWidth;
         widthPx = (durationDays / 30.44) * config.cellWidth;
     }
 
@@ -194,7 +212,7 @@ export const getBarStyle = (
 
 export const formatDateTH = (dateStr: string | Date | undefined | null) => {
     if (!dateStr) return '-';
-    const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+    const date = typeof dateStr === 'string' ? parseDate(dateStr) : dateStr;
     if (isNaN(date.getTime())) return '-';
     const day = date.getDate().toString().padStart(2, '0');
     const month = (date.getMonth() + 1).toString().padStart(2, '0');
@@ -205,8 +223,8 @@ export const formatDateTH = (dateStr: string | Date | undefined | null) => {
 export const formatDateRange = (startStr: string | Date | undefined | null, endStr: string | Date | undefined | null) => {
     if (!startStr || !endStr) return '-';
 
-    const start = typeof startStr === 'string' ? parseISO(startStr) : startStr;
-    const end = typeof endStr === 'string' ? parseISO(endStr) : endStr;
+    const start = typeof startStr === 'string' ? parseDate(startStr) : startStr;
+    const end = typeof endStr === 'string' ? parseDate(endStr) : endStr;
 
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return '-';
 
@@ -255,25 +273,25 @@ export const getGroupSummary = (groupTask: Task, tasks: Task[], getTaskWeight: (
     leafTasks.forEach(task => {
         // Plan Dates
         if (task.planStartDate) {
-            const d = parseISO(task.planStartDate);
+            const d = parseDate(task.planStartDate);
             if (!minDate || isBefore(d, minDate)) minDate = d;
         }
         if (task.planEndDate) {
-            const d = parseISO(task.planEndDate);
+            const d = parseDate(task.planEndDate);
             if (!maxDate || isAfter(d, maxDate)) maxDate = d;
         }
 
         // Actual Dates
         if (task.actualStartDate) {
-            const d = parseISO(task.actualStartDate);
+            const d = parseDate(task.actualStartDate);
             if (!minActualDate || isBefore(d, minActualDate)) minActualDate = d;
 
             let effectiveEnd = d;
             if (task.actualEndDate) {
-                effectiveEnd = parseISO(task.actualEndDate);
+                effectiveEnd = parseDate(task.actualEndDate);
             } else if ((task.progress || 0) > 0) {
-                const pStart = parseISO(task.planStartDate);
-                const pEnd = parseISO(task.planEndDate);
+                const pStart = parseDate(task.planStartDate);
+                const pEnd = parseDate(task.planEndDate);
                 const plannedDuration = differenceInDays(pEnd, pStart) + 1;
                 const progressDays = Math.round(plannedDuration * (Number(task.progress) / 100));
                 effectiveEnd = addDays(d, Math.max(0, progressDays - 1));
@@ -290,10 +308,10 @@ export const getGroupSummary = (groupTask: Task, tasks: Task[], getTaskWeight: (
 
     return {
         count: leafTasks.length,
-        minStartDate: minDate ? format(minDate, 'yyyy-MM-dd') : groupTask.planStartDate,
-        maxEndDate: maxDate ? format(maxDate, 'yyyy-MM-dd') : groupTask.planEndDate,
-        minActualDate: minActualDate ? format(minActualDate, 'yyyy-MM-dd') : null,
-        maxActualDate: maxActualDate ? format(maxActualDate, 'yyyy-MM-dd') : null,
+        minStartDate: minDate ? format(minDate, 'dd/MM/yyyy') : groupTask.planStartDate,
+        maxEndDate: maxDate ? format(maxDate, 'dd/MM/yyyy') : groupTask.planEndDate,
+        minActualDate: minActualDate ? format(minActualDate, 'dd/MM/yyyy') : null,
+        maxActualDate: maxActualDate ? format(maxActualDate, 'dd/MM/yyyy') : null,
         progress: totalWeight > 0 ? Math.round(weightedProgress / totalWeight) : 0,
         totalCost,
         totalWeight // Export logic relies on this?
