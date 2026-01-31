@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Task } from '@/types/construction';
 import { format, parseISO, differenceInDays, addMonths, subMonths, isValid, isAfter } from 'date-fns';
-import { ChevronRight, ChevronDown, Layers, FolderOpen } from 'lucide-react';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 
 // Types & Utils
 import { ViewMode, VisibleColumns, DateRange } from '../gantt/types';
@@ -13,6 +13,7 @@ import { getCategorySummary, parseDate } from '../gantt/utils';
 
 // Hooks
 import { useGanttTimeline } from '../gantt/hooks/useGanttTimeline';
+import { usePdfExport } from '@/hooks/usePdfExport';
 import { useSCurveData, SCurveMode } from './hooks/useSCurveData';
 
 // Components
@@ -32,7 +33,7 @@ export default function SCurveChart(props: SCurveChartProps) {
     const { tasks, startDate, endDate, title, viewMode: controlledViewMode, onViewModeChange, onTaskUpdate } = props;
 
     // View Mode State
-    const [internalViewMode, setInternalViewMode] = useState<ViewMode>('day');
+    const [internalViewMode, setInternalViewMode] = useState<ViewMode>('week');
     const viewMode = controlledViewMode || internalViewMode;
 
     const handleViewModeChange = (mode: ViewMode) => {
@@ -44,6 +45,7 @@ export default function SCurveChart(props: SCurveChartProps) {
     };
 
     // Container & Width
+    const { containerRef, exportToPdf } = usePdfExport({ title: title || 'S-Curve Analysis', allowSVG: true, fitToWidth: true });
     const scrollContainerRef = useRef<HTMLDivElement>(null);
     const [containerWidth, setContainerWidth] = useState(0);
 
@@ -299,7 +301,7 @@ export default function SCurveChart(props: SCurveChartProps) {
     };
 
     return (
-        <div className="relative flex flex-col h-[750px] bg-white rounded border border-gray-300 w-full max-w-full overflow-hidden font-sans">
+        <div ref={containerRef} className="relative flex flex-col h-[750px] bg-white rounded border border-gray-300 w-full max-w-full overflow-hidden font-sans">
             <GanttToolbar
                 title={title || "S-Curve Analysis"}
                 timeRange={timeRange}
@@ -318,9 +320,20 @@ export default function SCurveChart(props: SCurveChartProps) {
                 progressStats={{ totalActual: 0, totalPlan: 0 }}
                 visibleColumns={visibleColumns}
                 onToggleColumn={(col) => setVisibleColumns((prev: any) => ({ ...prev, [col]: !prev[col] }))}
+                onToggleAllColumns={(visible) => {
+                    setVisibleColumns((prev: any) => {
+                        const next = { ...prev };
+                        Object.keys(next).forEach(key => {
+                            next[key] = visible;
+                        });
+                        return next;
+                    });
+                }}
                 showDependencies={false}
                 onToggleDependencies={() => { }}
-                onExport={() => { }}
+
+                onExport={exportToPdf}
+                onExportPDF={exportToPdf}
                 customDate={null}
                 onCustomDateChange={() => { }}
                 onBudgetChange={setManualBudget}
@@ -381,8 +394,8 @@ export default function SCurveChart(props: SCurveChartProps) {
                                                         >
                                                             {collapsedCategories.has(category) ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                                                         </button>
-                                                        {/* Icon for Category */}
-                                                        <Layers className="w-4 h-4" style={{ color: catColor }} />
+                                                        {/* Colored Dot for Category */}
+                                                        <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: catColor }} />
                                                         <div className="font-bold text-sm text-gray-800" style={{ color: catColor }}>{category}</div>
                                                     </div>
                                                 </div>
@@ -402,8 +415,8 @@ export default function SCurveChart(props: SCurveChartProps) {
                                                                 <div className="flex bg-gray-50/50 h-8 border-b border-dashed border-gray-200">
                                                                     <div className="sticky left-0 z-50 bg-gray-50 border-r border-gray-300 px-4 flex items-center"
                                                                         style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '36px' }}>
-                                                                        {/* Icon for Subcategory */}
-                                                                        <FolderOpen className="w-4 h-4 mr-2" style={{ color: subColor }} />
+                                                                        {/* Colored Dot for Subcategory */}
+                                                                        <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: subColor }} />
                                                                         <div className="text-xs font-semibold text-gray-600" style={{ color: subColor }}>{subcat}</div>
                                                                     </div>
                                                                     <div className="flex-1"></div>
@@ -463,7 +476,7 @@ export default function SCurveChart(props: SCurveChartProps) {
                 </div>
 
                 {/* Fixed Right Axis Overlay */}
-                <div className="absolute right-0 w-[50px] pointer-events-none z-20 border-l border-gray-100 bg-white/20"
+                <div className="absolute right-0 w-[24px] pointer-events-none z-50 border-l border-gray-100 bg-white"
                     style={{ top: '48px', height: '400px' }}>
                     {/* Axis Labels */}
                     <div className="relative w-full h-full">

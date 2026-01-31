@@ -7,12 +7,16 @@ interface UsePdfExportOptions {
     pageSize?: 'A4' | 'A3';
     orientation?: 'portrait' | 'landscape';
     margin?: string;
+    allowSVG?: boolean;
+    fitToWidth?: boolean;
 }
 
 const defaultOptions: UsePdfExportOptions = {
     pageSize: 'A3',
     orientation: 'landscape',
-    margin: '10mm'
+    margin: '10mm',
+    allowSVG: false,
+    fitToWidth: false
 };
 
 export function usePdfExport(options: UsePdfExportOptions = {}) {
@@ -73,10 +77,12 @@ export function usePdfExport(options: UsePdfExportOptions = {}) {
                     width: 100%;
                 }
                 
+                ${!mergedOptions.allowSVG ? `
                 /* Hide dependency lines SVG */
                 #pdf-export-container svg {
                     display: none !important;
                 }
+                ` : ''}
                 
                 /* Hide dependency dots */
                 #pdf-export-container [title*="Link"] {
@@ -114,8 +120,32 @@ export function usePdfExport(options: UsePdfExportOptions = {}) {
         // Add ID for print targeting
         element.id = 'pdf-export-container';
 
-        // Small delay to ensure styles are applied
+        // Small delay to ensure styles are applied and layout is calculated
         setTimeout(() => {
+            // Calculate scale for fitToWidth
+            if (mergedOptions.fitToWidth && scrollContainer) {
+                const contentWidth = scrollContainer.scrollWidth;
+                // Approximate printable width (A3 Landscape ~ 1500px, A4 ~ 1000px)
+                const targetWidth = mergedOptions.pageSize === 'A3' ? 1500 : 1000;
+
+                if (contentWidth > targetWidth) {
+                    const rawScale = targetWidth / contentWidth;
+                    // Limit minimum scale to 0.6 to prevent unreadable text
+                    const scale = Math.max(rawScale, 0.6);
+
+                    printStyles.textContent += `
+                        @media print {
+                            #pdf-export-container {
+                                transform: scale(${scale});
+                                transform-origin: top left;
+                                width: ${contentWidth}px !important;
+                                max-width: none !important;
+                            }
+                        }
+                    `;
+                }
+            }
+
             window.print();
 
             // Restore original styles after print dialog
@@ -134,8 +164,8 @@ export function usePdfExport(options: UsePdfExportOptions = {}) {
                 const printStyleEl = document.getElementById('pdf-export-styles');
                 if (printStyleEl) printStyleEl.remove();
             }, 500);
-        }, 100);
-    }, [mergedOptions.pageSize, mergedOptions.orientation, mergedOptions.margin]);
+        }, 500); // Increased delay for safety
+    }, [mergedOptions.pageSize, mergedOptions.orientation, mergedOptions.margin, mergedOptions.allowSVG, mergedOptions.fitToWidth]);
 
     return {
         containerRef,

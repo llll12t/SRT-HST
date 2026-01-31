@@ -284,11 +284,78 @@ export default function TasksPage() {
         );
     };
 
-    // Handle reordering (Disabled in hierarchical view for now to keep it simple, or implement drag-n-drop later)
+    // Handle reordering
     const handleMoveTask = async (task: Task, direction: 'up' | 'down') => {
-        // Simple swap logic only works well for flat siblings
-        // For hierarchy, it's complex. Let's disable for now or keep basic swap if same parent.
-        alert('ฟีเจอร์จัดลำดับกำลังปรับปรุงให้รองรับลำดับชั้น (Coming Soon)');
+        if (reorderingId) return;
+
+        try {
+            setReorderingId(task.id);
+
+            // 1. Identify context (Siblings) with same Project + Parent
+            // Use 'tasks' source to ensure we have full context, not just filtered view
+            const siblings = tasks
+                .filter(t =>
+                    t.projectId === task.projectId &&
+                    (t.parentTaskId || '') === (task.parentTaskId || '')
+                )
+                .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+            const currentIndex = siblings.findIndex(t => t.id === task.id);
+            if (currentIndex === -1) return;
+
+            // 2. Identify target
+            let targetTask: Task | undefined;
+            if (direction === 'up') {
+                if (currentIndex > 0) targetTask = siblings[currentIndex - 1];
+            } else {
+                if (currentIndex < siblings.length - 1) targetTask = siblings[currentIndex + 1];
+            }
+
+            if (!targetTask) {
+                // No valid swap target (Already at top/bottom of its group)
+                return;
+            }
+
+            // 3. Swap Orders
+            let newOrderCurrent = targetTask.order || 0;
+            let newOrderTarget = task.order || 0;
+
+            // Safety: If orders are identical, force a spread
+            if (newOrderCurrent === newOrderTarget) {
+                if (direction === 'up') {
+                    newOrderTarget = newOrderCurrent + 1;
+                } else {
+                    newOrderCurrent = newOrderTarget + 1;
+                }
+            }
+
+            // Optimistic Update
+            const updatedTasks = tasks.map(t => {
+                if (t.id === task.id) return { ...t, order: newOrderCurrent };
+                if (t.id === targetTask!.id) return { ...t, order: newOrderTarget };
+                return t;
+            });
+            setTasks(updatedTasks);
+
+            // 4. Update Firestore
+            await Promise.all([
+                updateTask(task.id, { order: newOrderCurrent }),
+                updateTask(targetTask.id, { order: newOrderTarget })
+            ]);
+
+        } catch (error) {
+            console.error('Failed to reorder', error);
+            fetchData(); // Revert on error
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'ไม่สามารถจัดลำดับได้',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+        } finally {
+            setReorderingId(null);
+        }
     };
 
     // Open modal
@@ -807,14 +874,16 @@ export default function TasksPage() {
                                                                     <button
                                                                         onClick={() => handleMoveTask(task, 'up')}
                                                                         className="p-0.5 hover:bg-gray-100 rounded-sm text-gray-500 hover:text-blue-600 disabled:opacity-30"
-                                                                        disabled={filteredTasks.indexOf(task) === 0 || reorderingId !== null}
+                                                                        disabled={reorderingId !== null}
+                                                                        title="เลื่อนขึ้น"
                                                                     >
                                                                         <ArrowUp className="w-3 h-3" />
                                                                     </button>
                                                                     <button
                                                                         onClick={() => handleMoveTask(task, 'down')}
                                                                         className="p-0.5 hover:bg-gray-100 rounded-sm text-gray-500 hover:text-blue-600 disabled:opacity-30"
-                                                                        disabled={filteredTasks.indexOf(task) === filteredTasks.length - 1 || reorderingId !== null}
+                                                                        disabled={reorderingId !== null}
+                                                                        title="เลื่อนลง"
                                                                     >
                                                                         <ArrowDown className="w-3 h-3" />
                                                                     </button>

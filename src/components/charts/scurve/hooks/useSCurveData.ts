@@ -16,7 +16,8 @@ export type SCurveMode = 'physical' | 'financial';
 export function useSCurveData(tasks: Task[], timeRange: { start: Date, end: Date }, mode: SCurveMode) {
 
     return useMemo(() => {
-        const totalProjectDays = differenceInDays(timeRange.end, timeRange.start) + 1;
+        const rawDays = differenceInDays(timeRange.end, timeRange.start) + 1;
+        const totalProjectDays = Math.max(1, rawDays); // Ensure at least 1 day to prevent negative array length
 
         // Use Float32Array for better memory/performance on large arrays
         const planDaily = new Float32Array(totalProjectDays);

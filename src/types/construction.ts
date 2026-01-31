@@ -12,6 +12,8 @@ export interface Project {
     status: 'planning' | 'in-progress' | 'completed' | 'on-hold';
     createdAt: string;
     updatedAt: string;
+    categoryOrder?: string[];
+    subcategoryOrder?: Record<string, string[]>; // { "categoryName": ["sub1", "sub2", ...] }
 }
 
 export interface Task {

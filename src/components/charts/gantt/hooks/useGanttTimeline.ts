@@ -54,17 +54,26 @@ export function useGanttTimeline({ startDate, endDate, viewMode, containerWidth 
     const config = useMemo(() => {
         let base;
         switch (viewMode) {
-            case 'day': base = { cellWidth: 30, label: 'วัน' }; break;
-            case 'week': base = { cellWidth: 40, label: 'สัปดาห์' }; break;
-            case 'month': base = { cellWidth: 100, label: 'เดือน' }; break;
-            default: base = { cellWidth: 40, label: 'สัปดาห์' };
+            case 'day': base = { cellWidth: 40, label: 'วัน' }; break;
+            case 'week': base = { cellWidth: 80, label: 'สัปดาห์' }; break;
+            case 'month': base = { cellWidth: 120, label: 'เดือน' }; break;
+            default: base = { cellWidth: 80, label: 'สัปดาห์' };
         }
+
+        // Auto-fit logic with Maximum Constraints (Prevent "Too Stretched")
+        const MAX_WIDTHS = {
+            day: 100,   // Day cells won't exceed 100px
+            week: 120,  // Week cells won't exceed 200px
+            month: 400  // Month cells won't exceed 300px
+        };
 
         if (containerWidth > 0 && timeline.items.length > 0) {
             const totalRequired = timeline.items.length * base.cellWidth;
             if (totalRequired < containerWidth) {
                 const fitWidth = (containerWidth - 2) / timeline.items.length;
-                return { ...base, cellWidth: Math.max(base.cellWidth, fitWidth) };
+                // Use the smaller of: Calculated Fit Width OR Max Limit
+                const constrainedWidth = Math.min(fitWidth, MAX_WIDTHS[viewMode] || 200);
+                return { ...base, cellWidth: Math.max(base.cellWidth, constrainedWidth) };
             }
         }
         return base;

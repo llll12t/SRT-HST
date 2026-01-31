@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
+
 import {
     ArrowLeft,
     Building2,
@@ -25,6 +26,7 @@ import {
     Info,
     Download,
     Upload,
+    FileDown,
     Save,
     ArrowUp,
     ArrowDown,
@@ -32,7 +34,7 @@ import {
 } from 'lucide-react';
 import { format, parseISO, differenceInDays, addDays } from 'date-fns';
 import { Project, Task, Member } from '@/types/construction';
-import { getProject, getTasks, createTask, updateTask, deleteTask, getMembers, syncGroupProgress, batchCreateTasks, deleteAllTasks } from '@/lib/firestore';
+import { getProject, getTasks, createTask, updateTask, deleteTask, getMembers, syncGroupProgress, batchCreateTasks, deleteAllTasks, updateProject } from '@/lib/firestore';
 import { useAuth } from '@/contexts/AuthContext';
 
 // Helper: Format date to Thai format
@@ -169,6 +171,10 @@ export default function ProjectDetailPage() {
             // Sort tasks by order
             setTasks(tasksData.sort((a, b) => (a.order || 0) - (b.order || 0)));
             setMembers(membersData);
+            // Initialize category order from project
+            if (projectData?.categoryOrder) {
+                setCategoryOrder(projectData.categoryOrder);
+            }
         } catch (error) {
             console.error('Error fetching data:', error);
         } finally {
@@ -556,6 +562,14 @@ export default function ProjectDetailPage() {
                     currentOrder.splice(sourceIndex, 1);
                     currentOrder.splice(targetIndex, 0, sourceCat);
                     setCategoryOrder(currentOrder);
+
+                    // Persist to Firestore
+                    try {
+                        await updateProject(projectId, { categoryOrder: currentOrder });
+                    } catch (error) {
+                        console.error('Failed to save category order:', error);
+                        alert('บันทึกลำดับหมวดหมู่ล้มเหลว');
+                    }
                 }
                 return;
             }
@@ -608,48 +622,63 @@ export default function ProjectDetailPage() {
         const sourceTask = tasks.find(t => t.id === sourceId);
         if (!sourceTask) return;
 
-        // Optimistic Update
-        const newTasks = [...tasks];
-        const sourceIndex = newTasks.findIndex(t => t.id === sourceId);
-        newTasks.splice(sourceIndex, 1);
+        // IMPORTANT: Only allow becoming a child of GROUP type tasks
+        // If target is not a group, just reorder (swap positions) instead
+        if (targetTask.type !== 'group') {
+            // Reorder logic - move source next to target in same context
+            const updatedSourceTask = {
+                ...sourceTask,
+                category: targetTask.category,
+                subcategory: (targetTask as any).subcategory || '',
+                subsubcategory: (targetTask as any).subsubcategory || ''
+            };
 
-        const updatedSourceTask = {
-            ...sourceTask,
-            category: targetTask.category,
-            subcategory: (targetTask as any).subcategory || '',
-            subsubcategory: (targetTask as any).subsubcategory || ''
-        };
+            const targetSiblings = tasks.filter(t =>
+                (t.category || '') === (targetTask.category || '') &&
+                ((t as any).subcategory || '') === ((targetTask as any).subcategory || '') &&
+                ((t as any).subsubcategory || '') === ((targetTask as any).subsubcategory || '') &&
+                t.id !== sourceId
+            ).sort((a, b) => (a.order || 0) - (b.order || 0));
 
-        const targetSiblings = tasks.filter(t =>
-            (t.category || '') === (targetTask.category || '') &&
-            ((t as any).subcategory || '') === ((targetTask as any).subcategory || '') &&
-            ((t as any).subsubcategory || '') === ((targetTask as any).subsubcategory || '') &&
-            t.id !== sourceId
-        ).sort((a, b) => (a.order || 0) - (b.order || 0));
+            const targetSiblingIndex = targetSiblings.findIndex(t => t.id === targetTask.id);
+            targetSiblings.splice(targetSiblingIndex, 0, updatedSourceTask);
 
-        const targetSiblingIndex = targetSiblings.findIndex(t => t.id === targetTask.id);
+            const updates: Promise<any>[] = [];
+            targetSiblings.forEach((t, index) => {
+                const newOrder = index + 1;
+                if (t.order !== newOrder || t.id === sourceId) {
+                    updates.push(updateTask(t.id, {
+                        order: newOrder,
+                        category: t.category,
+                        subcategory: (t as any).subcategory,
+                        subsubcategory: (t as any).subsubcategory
+                    }));
+                }
+            });
 
-        targetSiblings.splice(targetSiblingIndex, 0, updatedSourceTask);
-
-        const updates: Promise<any>[] = [];
-        targetSiblings.forEach((t, index) => {
-            const newOrder = index + 1;
-            if (t.order !== newOrder || t.id === sourceId) {
-                updates.push(updateTask(t.id, {
-                    order: newOrder,
-                    category: t.category,
-                    subcategory: (t as any).subcategory,
-                    subsubcategory: (t as any).subsubcategory
-                }));
+            try {
+                await Promise.all(updates);
+                await fetchData();
+            } catch (error) {
+                console.error('Error reordering:', error);
+                alert('เกิดข้อผิดพลาดในการจัดเรียง');
             }
-        });
+            return;
+        }
 
+        // If target IS a group, allow becoming a child
         try {
-            await Promise.all(updates);
+            await updateTask(sourceId, {
+                ...sourceTask,
+                parentTaskId: targetTask.id,
+                category: targetTask.category,
+                subcategory: (targetTask as any).subcategory || '',
+                subsubcategory: (targetTask as any).subsubcategory || ''
+            });
             await fetchData();
         } catch (error) {
-            console.error('Error reordering:', error);
-            alert('เกิดข้อผิดพลาดในการจัดเรียง');
+            console.error('Error moving task to group:', error);
+            alert('ไม่สามารถย้ายงานไปยังกลุ่มได้');
         }
     };
 
@@ -730,24 +759,7 @@ export default function ProjectDetailPage() {
             'Actual End'
         ];
 
-        // Add instruction row
-        const instructionRow = [
-            'หมวดหมู่',
-            'หมวดหมู่ย่อย',
-            'หมวดหมู่ย่อยระดับ 3',
-            'ประเภท (task/group)',
-            'ชื่องาน',
-            'วันเริ่มต้น (dd/MM/yyyy)',
-            'วันสิ้นสุด (dd/MM/yyyy)',
-            'ระยะเวลา (วัน)',
-            'ค่าใช้จ่าย',
-            'จำนวน',
-            'ผู้รับผิดชอบ',
-            'ความคืบหน้า (%)',
-            'สถานะ',
-            'วันเริ่มจริง (dd/MM/yyyy)',
-            'วันสิ้นสุดจริง (dd/MM/yyyy)'
-        ];
+
 
         const rows = tasks.map(t => [
             `"${(t.category || '').replace(/"/g, '""')}"`,
@@ -770,7 +782,6 @@ export default function ProjectDetailPage() {
         // Add BOM for Excel Thai support
         const csvContent = '\uFEFF' + [
             headers.join(','),
-            instructionRow.map(c => `"${c}"`).join(','),
             ...rows.map(r => r.join(','))
         ].join('\n');
 
@@ -895,35 +906,24 @@ export default function ProjectDetailPage() {
     };
 
     const handleDownloadTemplate = () => {
-        // Reuse handleExport logic effectively via a sample data call or just constructing it
         const headers = [
-            'Category', 'Subcategory', 'SubSubcategory', 'Type', 'Task Name',
-            'Plan Start', 'Plan End', 'Duration (Days)', 'Cost',
-            'Quantity', 'Responsible', 'Progress (%)', 'Status'
-        ];
-
-        const instruction = [
-            'หมวดหมู่ (จำเป็น)', 'หมวดหมู่ย่อย', 'หมวดหมู่ย่อย 2', 'task/group', 'ชื่องาน (จำเป็น)',
-            'dd/MM/yyyy', 'dd/MM/yyyy', 'จำนวนวัน', 'บาท',
-            'หน่วย', 'ชื่อผู้รับผิดชอบ', '0-100', 'not-started/in-progress/completed'
+            'Category', 'Subcategory', 'SubSubcategory', 'Task Name',
+            'Plan Start', 'Plan End', 'Duration', 'Cost', 'Quantity'
         ];
 
         const sample = [
-            ['งานเตรียมการ', '', '', 'task', 'งานรื้อถอน', '01/01/2024', '05/01/2024', '5', '10000', '1 งาน', 'ช่าง ก', '0', 'not-started'],
-            ['งานโครงสร้าง', 'งานฐานราก', '', 'task', 'ขุดดิน', '06/01/2024', '10/01/2024', '5', '5000', '10 ลบ.ม.', 'ช่าง ข', '0', 'not-started'],
-            ['งานโครงสร้าง', 'งานฐานราก', 'งานเหล็กเสริม', 'task', 'ผูกเหล็ก', '11/01/2024', '15/01/2024', '5', '20000', '100 กก.', 'ช่าง ค', '0', 'not-started']
+            ['งานโครงสร้าง', 'ฐานราก', '', 'ขุดดิน', format(new Date(), 'yyyy-MM-dd'), format(addDays(new Date(), 4), 'yyyy-MM-dd'), '5', '5000', '10 ลบ.ม.']
         ];
 
         const csvContent = '\uFEFF' + [
             headers.join(','),
-            instruction.map(s => `"${s}"`).join(','),
             ...sample.map(r => r.map(c => `"${c}"`).join(','))
         ].join('\n');
 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(blob);
-        link.download = 'import_template.csv';
+        link.download = `template_${project?.code || 'project'}.csv`;
         link.click();
     };
 
@@ -1063,6 +1063,14 @@ export default function ProjectDetailPage() {
                     {canEdit && (
                         <>
                             <div className="hidden md:flex items-center bg-gray-50 rounded-sm p-1 border border-gray-300">
+                                <button
+                                    onClick={handleDownloadTemplate}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-white hover:border border-gray-300 rounded-sm transition-all flex items-center gap-2 mr-1"
+                                    title="ดาวน์โหลดไฟล์ตัวอย่าง"
+                                >
+                                    <FileDown className="w-3.5 h-3.5" /> Template
+                                </button>
+                                <div className="w-px h-4 bg-gray-300 mx-1"></div>
                                 <label htmlFor="import-csv" className="px-3 py-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 hover:bg-white hover:border border-gray-300 rounded-sm cursor-pointer transition-all flex items-center gap-2">
                                     <Upload className="w-3.5 h-3.5" /> Import
                                     <input
@@ -1865,45 +1873,47 @@ export default function ProjectDetailPage() {
                 )
             }
             {/* Color Menu Popup */}
-            {activeColorMenu && (
-                <>
-                    <div
-                        className="fixed inset-0 z-[998]"
-                        onClick={() => setActiveColorMenu(null)}
-                    />
-                    <div
-                        className="fixed z-[999] bg-white rounded-sm shadow-none border border-gray-300 p-3 w-40"
-                        style={{ top: activeColorMenu.top, left: activeColorMenu.left }}
-                    >
-                        <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Select Color</div>
-                        <div className="grid grid-cols-4 gap-2">
-                            {[
-                                '#3b82f6', // Blue
-                                '#ef4444', // Red
-                                '#22c55e', // Green
-                                '#eab308', // Yellow
-                                '#a855f7', // Purple
-                                '#ec4899', // Pink
-                                '#f97316', // Orange
-                                '#6b7280'  // Gray
-                            ].map(color => (
-                                <button
-                                    key={color}
-                                    className="w-6 h-6 rounded-full border border-gray-300 hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400"
-                                    style={{ backgroundColor: color }}
-                                    onClick={() => {
-                                        const newColors = { ...categoryColors, [activeColorMenu.id]: color };
-                                        setCategoryColors(newColors);
-                                        localStorage.setItem('gantt_category_colors', JSON.stringify(newColors));
-                                        setActiveColorMenu(null);
-                                    }}
-                                    title={color}
-                                />
-                            ))}
+            {
+                activeColorMenu && (
+                    <>
+                        <div
+                            className="fixed inset-0 z-[998]"
+                            onClick={() => setActiveColorMenu(null)}
+                        />
+                        <div
+                            className="fixed z-[999] bg-white rounded-sm shadow-none border border-gray-300 p-3 w-40"
+                            style={{ top: activeColorMenu.top, left: activeColorMenu.left }}
+                        >
+                            <div className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wider">Select Color</div>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    '#3b82f6', // Blue
+                                    '#ef4444', // Red
+                                    '#22c55e', // Green
+                                    '#eab308', // Yellow
+                                    '#a855f7', // Purple
+                                    '#ec4899', // Pink
+                                    '#f97316', // Orange
+                                    '#6b7280'  // Gray
+                                ].map(color => (
+                                    <button
+                                        key={color}
+                                        className="w-6 h-6 rounded-full border border-gray-300 hover:scale-110 transition-transform focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400"
+                                        style={{ backgroundColor: color }}
+                                        onClick={() => {
+                                            const newColors = { ...categoryColors, [activeColorMenu.id]: color };
+                                            setCategoryColors(newColors);
+                                            localStorage.setItem('gantt_category_colors', JSON.stringify(newColors));
+                                            setActiveColorMenu(null);
+                                        }}
+                                        title={color}
+                                    />
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                </>
-            )}
-        </div>
+                    </>
+                )
+            }
+        </div >
     );
 }

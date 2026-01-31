@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { Eye, EyeOff } from 'lucide-react';
 import { SCurveDataPoint } from './hooks/useSCurveData';
 import { differenceInDays, format } from 'date-fns';
 import { getCoordinateX } from '../gantt/utils';
@@ -50,35 +51,49 @@ export const SCurveGraph: React.FC<SCurveGraphProps> = ({
         return `${val.toLocaleString()} Units (Days)`;
     };
 
+    const [showLegend, setShowLegend] = useState(true);
+
     return (
-        <div className="absolute top-0 bottom-0 z-10 pointer-events-none"
+        <div className="absolute top-0 bottom-0 z-30 pointer-events-none"
             style={{ width: `${width}px`, height: '100%', left: `${left}px` }}>
 
             <div className="sticky top-0 w-full border-b border-gray-200 bg-white/90 backdrop-blur-sm relative group/chart shadow-sm"
                 style={{ height: `${height}px` }}>
 
-                {/* Legend */}
-                <div className="absolute top-4 right-4 bg-white/95 p-3 rounded-lg border border-gray-200 shadow-sm z-50 flex flex-col gap-2 pointer-events-auto min-w-[180px]">
-                    <div className="text-xs font-bold text-gray-900 border-b border-gray-100 pb-1 mb-1">
-                        {mode === 'financial' ? 'Financial (Cost)' : 'Physical (Work)'}
-                    </div>
-                    <div className="flex items-center gap-2 justify-between">
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-blue-500 border border-blue-600"></div>
-                            <span className="text-xs font-semibold text-gray-700">Plan</span>
+                {/* Legend Toggle & Content */}
+                <div className="absolute top-4 left-4 z-50 flex flex-col items-start gap-1 pointer-events-auto">
+                    <button
+                        onClick={() => setShowLegend(!showLegend)}
+                        className="p-1.5 bg-white/90 border border-gray-200 rounded-md shadow-sm hover:bg-gray-50 text-gray-500 transition-colors"
+                        title={showLegend ? "Hide Legend" : "Show Legend"}
+                    >
+                        {showLegend ? <EyeOff size={14} /> : <Eye size={14} />}
+                    </button>
+
+                    {showLegend && (
+                        <div className="bg-white/95 p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col gap-2 min-w-[180px]">
+                            <div className="text-xs font-bold text-gray-900 border-b border-gray-100 pb-1 mb-1">
+                                {mode === 'financial' ? 'Financial (Cost)' : 'Physical (Work)'}
+                            </div>
+                            <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-blue-500 border border-blue-600"></div>
+                                    <span className="text-xs font-semibold text-gray-700">Plan</span>
+                                </div>
+                                <span className="text-xs text-gray-500">{points.length > 0 ? points[points.length - 1].plan.toFixed(1) : 0}%</span>
+                            </div>
+                            <div className="flex items-center gap-2 justify-between">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-green-500 border border-green-600"></div>
+                                    <span className="text-xs font-semibold text-gray-700">Actual</span>
+                                </div>
+                                <span className="text-xs text-gray-500">{actualPoints.length > 0 ? actualPoints[actualPoints.length - 1].actual.toFixed(1) : 0}%</span>
+                            </div>
+                            <div className="mt-1 pt-1 border-t border-gray-100 text-[10px] text-gray-500 text-right">
+                                Total Scope: <span className="font-medium text-gray-900">{formatScope(totalScope, mode)}</span>
+                            </div>
                         </div>
-                        <span className="text-xs text-gray-500">{points.length > 0 ? points[points.length - 1].plan.toFixed(1) : 0}%</span>
-                    </div>
-                    <div className="flex items-center gap-2 justify-between">
-                        <div className="flex items-center gap-2">
-                            <div className="w-3 h-3 rounded-full bg-green-500 border border-green-600"></div>
-                            <span className="text-xs font-semibold text-gray-700">Actual</span>
-                        </div>
-                        <span className="text-xs text-gray-500">{actualPoints.length > 0 ? actualPoints[actualPoints.length - 1].actual.toFixed(1) : 0}%</span>
-                    </div>
-                    <div className="mt-1 pt-1 border-t border-gray-100 text-[10px] text-gray-500 text-right">
-                        Total Scope: <span className="font-medium text-gray-900">{formatScope(totalScope, mode)}</span>
-                    </div>
+                    )}
                 </div>
 
                 <svg width={width} height={height} className="overflow-visible">

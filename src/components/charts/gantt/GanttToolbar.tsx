@@ -45,6 +45,7 @@ interface GanttToolbarProps {
         progress: boolean;
     };
     onToggleColumn?: (col: string) => void;
+    onToggleAllColumns?: (visible: boolean) => void;
     showDependencies: boolean;
     onToggleDependencies: () => void;
     customDate: Date | null;
@@ -67,6 +68,7 @@ export default function GanttToolbar({
     progressStats,
     visibleColumns,
     onToggleColumn,
+    onToggleAllColumns,
     showDependencies,
     onToggleDependencies,
     customDate,
@@ -122,7 +124,7 @@ export default function GanttToolbar({
                         <span className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold">Budget</span>
                         <div className="flex items-baseline gap-1" onDoubleClick={() => setIsBudgetEditing(true)}>
                             {isBudgetEditing ? (
-                                <input 
+                                <input
                                     autoFocus
                                     className="w-24 text-sm font-bold font-mono border-b border-blue-500 outline-none"
                                     value={budgetInput}
@@ -192,6 +194,19 @@ export default function GanttToolbar({
                         className={`p-2 rounded-md transition-all ${showDependencies ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}>
                         <LinkIcon className="w-4 h-4" />
                     </button>
+
+                    {onToggleAllColumns && visibleColumns && (
+                        <button
+                            onClick={() => {
+                                const anyVisible = Object.values(visibleColumns).some(v => v);
+                                onToggleAllColumns(!anyVisible);
+                            }}
+                            title={Object.values(visibleColumns).some(v => v) ? 'ซ่อนคอลัมน์ทั้งหมด' : 'แสดงคอลัมน์ทั้งหมด'}
+                            className={`p-2 rounded-md transition-all ${Object.values(visibleColumns).every(v => !v) ? 'bg-blue-50 text-blue-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'}`}
+                        >
+                            {Object.values(visibleColumns).some(v => v) ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                        </button>
+                    )}
 
                     <div className="relative column-menu-trigger">
                         <button

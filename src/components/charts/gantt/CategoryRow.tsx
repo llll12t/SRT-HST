@@ -70,18 +70,21 @@ export const CategoryRow: React.FC<CategoryRowProps> = ({
             <div
                 className={`flex bg-white border-b border-dashed border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors h-8 group ${isDragging ? 'opacity-40 bg-blue-50' : ''}`}
                 onClick={() => toggleCategory(category)}
-                draggable={!!onCategoryDragStart}
-                onDragStart={(e) => onCategoryDragStart?.(e, category)}
                 onDragOver={(e) => onCategoryDragOver?.(e)}
                 onDrop={(e) => onCategoryDrop?.(e, category)}
             >
                 <div className="sticky left-0 z-[60] bg-white group-hover:bg-gray-50 border-r border-gray-300 pl-2 shadow-[1px_0_0px_rgba(0,0,0,0.05)] flex items-center"
                     style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
 
-                    {/* Drag Handle */}
+                    {/* Drag Handle - Now the actual draggable element */}
                     {onCategoryDragStart && (
                         <div
                             className="cursor-move text-gray-300 hover:text-gray-500 p-0.5 mr-1"
+                            draggable
+                            onDragStart={(e) => {
+                                e.stopPropagation();
+                                onCategoryDragStart(e, category);
+                            }}
                             onClick={(e) => e.stopPropagation()}
                         >
                             <GripVertical className="w-3.5 h-3.5" />

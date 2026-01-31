@@ -29,6 +29,11 @@ interface GanttChartProps {
     onAddSubTask?: (parentId: string) => void;
     onAddTaskToCategory?: (category: string, subcategory?: string, subsubcategory?: string) => void;
     updatingTaskIds?: Set<string>;
+    categoryOrder?: string[];
+    onCategoryOrderChange?: (order: string[]) => void;
+    subcategoryOrder?: Record<string, string[]>;
+    onSubcategoryOrderChange?: (categoryName: string, order: string[]) => void;
+    isSavingOrder?: boolean;
 }
 
 export default function GanttChart({
@@ -42,7 +47,12 @@ export default function GanttChart({
     onOpenProgressModal,
     onAddSubTask,
     onAddTaskToCategory,
-    updatingTaskIds
+    updatingTaskIds,
+    categoryOrder: propCategoryOrder,
+    onCategoryOrderChange,
+    subcategoryOrder: propSubcategoryOrder,
+    onSubcategoryOrderChange,
+    isSavingOrder = false
 }: GanttChartProps) {
 
     // Optimistic State
@@ -134,7 +144,9 @@ export default function GanttChart({
     const [rowDragState, setRowDragState] = useState<RowDragState | null>(null);
     const [dropTargetId, setDropTargetId] = useState<string | null>(null);
     const [dropPosition, setDropPosition] = useState<'above' | 'below' | 'child' | null>(null);
-    const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
+    const [internalCategoryOrder, setInternalCategoryOrder] = useState<string[]>([]);
+    const categoryOrder = propCategoryOrder || internalCategoryOrder;
+
     const [categoryDragState, setCategoryDragState] = useState<{ id: string; type: 'category' | 'subcategory' | 'subsubcategory' | 'task' } | null>(null);
 
     // Dependency Selection State
@@ -197,35 +209,64 @@ export default function GanttChart({
 
     // Row Drag Handlers (Structure Reordering)
     const handleCategoryDragStart = (e: React.DragEvent, category: string) => {
+        e.stopPropagation();
+        console.log('[CategoryDragStart] Starting drag for category:', category);
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', category);
+        e.dataTransfer.setData('application/x-category', category);
         setCategoryDragState({ id: category, type: 'category' });
     };
 
     const handleCategoryDragOver = (e: React.DragEvent) => {
         e.preventDefault();
+        e.stopPropagation();
         e.dataTransfer.dropEffect = 'move';
     };
 
     const handleCategoryDrop = async (e: React.DragEvent, targetCategory: string) => {
         e.preventDefault();
+        e.stopPropagation();
         const sourceId = categoryDragState?.id;
         const dragType = categoryDragState?.type;
+
+        console.log('[CategoryDrop] sourceId:', sourceId, 'dragType:', dragType, 'targetCategory:', targetCategory);
+
         setCategoryDragState(null);
 
-        if (!sourceId) return;
+        if (!sourceId) {
+            console.log('[CategoryDrop] No sourceId, returning');
+            return;
+        }
 
         if (dragType === 'category') {
-            if (sourceId === targetCategory) return;
+            if (sourceId === targetCategory) {
+                console.log('[CategoryDrop] Source equals target, returning');
+                return;
+            }
             const allCats = Object.keys(groupedTasks);
             let currentOrder = categoryOrder.length > 0 ? [...categoryOrder] : [...allCats];
+            // Ensure all existing categories are in the order array
             allCats.forEach(c => { if (!currentOrder.includes(c)) currentOrder.push(c); });
+
             const sourceIndex = currentOrder.indexOf(sourceId);
             const targetIndex = currentOrder.indexOf(targetCategory);
-            if (sourceIndex > -1 && targetIndex > -1) {
+
+            console.log('[CategoryDrop] sourceIndex:', sourceIndex, 'targetIndex:', targetIndex, 'currentOrder:', currentOrder);
+
+            if (sourceIndex > -1 && targetIndex > -1 && sourceIndex !== targetIndex) {
+                // Remove source from its current position
                 currentOrder.splice(sourceIndex, 1);
-                currentOrder.splice(targetIndex, 0, sourceId);
-                setCategoryOrder(currentOrder);
+                // Insert at target position (adjust if source was before target)
+                const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+                currentOrder.splice(adjustedTargetIndex, 0, sourceId);
+
+                console.log('[CategoryDrop] New order:', currentOrder, 'onCategoryOrderChange exists:', !!onCategoryOrderChange);
+
+                if (onCategoryOrderChange) {
+                    onCategoryOrderChange(currentOrder);
+                } else {
+                    setInternalCategoryOrder(currentOrder);
+                }
             }
             return;
         }
@@ -259,8 +300,63 @@ export default function GanttChart({
         e.preventDefault();
         e.stopPropagation();
         const sourceId = categoryDragState?.id;
+        const dragType = categoryDragState?.type;
+
+        console.log('[SubcategoryDrop] sourceId:', sourceId, 'dragType:', dragType, 'targetKey:', targetKey);
+
         setCategoryDragState(null);
-        if (!sourceId || !onTaskUpdate) return;
+        if (!sourceId) {
+            console.log('[SubcategoryDrop] No sourceId, returning');
+            return;
+        }
+
+        // Handle subcategory reordering within the same parent category
+        if (dragType === 'subcategory' && sourceId !== targetKey) {
+            // Parse source and target
+            const [sourceCat, sourceSub] = sourceId.split('::');
+            const [targetCat, targetSub] = targetKey.split('::');
+
+            console.log('[SubcategoryDrop] sourceCat:', sourceCat, 'sourceSub:', sourceSub, 'targetCat:', targetCat, 'targetSub:', targetSub);
+
+            // If same parent category, reorder subcategories using subcategoryOrder
+            if (sourceCat === targetCat && onSubcategoryOrderChange) {
+                // Get all subcategories in this category
+                const catData = groupedTasks[sourceCat];
+                if (!catData) return;
+
+                const allSubs = Object.keys(catData.subcategories);
+                const existingOrder = propSubcategoryOrder?.[sourceCat];
+                const currentOrder = existingOrder && existingOrder.length > 0
+                    ? [...existingOrder]
+                    : [...allSubs];
+
+                // Ensure all subcategories are in the order
+                allSubs.forEach(s => { if (!currentOrder.includes(s)) currentOrder.push(s); });
+
+                const sourceIndex = currentOrder.indexOf(sourceSub);
+                const targetIndex = currentOrder.indexOf(targetSub);
+
+                console.log('[SubcategoryDrop] sourceIndex:', sourceIndex, 'targetIndex:', targetIndex, 'currentOrder:', currentOrder);
+
+                if (sourceIndex > -1 && targetIndex > -1 && sourceIndex !== targetIndex) {
+                    // Remove source and insert at target position
+                    currentOrder.splice(sourceIndex, 1);
+                    const adjustedTargetIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+                    currentOrder.splice(adjustedTargetIndex, 0, sourceSub);
+
+                    console.log('[SubcategoryDrop] New order:', currentOrder);
+                    onSubcategoryOrderChange(sourceCat, currentOrder);
+                }
+            } else if (sourceCat !== targetCat && onTaskUpdate) {
+                // Move to different category
+                const tasksToMove = optimisticTasks.filter(t =>
+                    t.category === sourceCat && t.subcategory === sourceSub
+                );
+                await Promise.all(tasksToMove.map(t =>
+                    onTaskUpdate(t.id, { category: targetCat, subcategory: targetSub })
+                ));
+            }
+        }
     };
 
     // Dependency Linking
@@ -411,9 +507,14 @@ export default function GanttChart({
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             const relY = e.clientY - rect.top;
             const h = rect.height;
+
+            // Check if target task is a group (only groups can have children)
+            const targetTask = optimisticTasks.find(t => t.id === targetId);
+            const canBeChild = targetTask?.type === 'group';
+
             if (relY < h * 0.3) setDropPosition('above');
             else if (relY > h * 0.7) setDropPosition('below');
-            else setDropPosition('child');
+            else setDropPosition(canBeChild ? 'child' : 'above'); // Default to 'above' if not a group
             setDropTargetId(targetId);
         }
     };
@@ -427,6 +528,12 @@ export default function GanttChart({
         if (!targetTask) return;
 
         if (dropPosition === 'child') {
+            // Only allow dropping as child if target is a group type
+            if (targetTask.type !== 'group') {
+                console.log('[RowDrop] Cannot drop as child - target is not a group');
+                handleRowDragEnd();
+                return;
+            }
             await onTaskUpdate(sourceId, {
                 parentTaskId: targetId,
                 category: targetTask.category,
@@ -542,11 +649,31 @@ export default function GanttChart({
                 progressStats={{ totalActual: summaryStats.progress, totalPlan: 0 }}
                 visibleColumns={visibleColumns}
                 onToggleColumn={(col) => setVisibleColumns((prev: any) => ({ ...prev, [col]: !prev[col] }))}
+                onToggleAllColumns={(visible) => {
+                    setVisibleColumns((prev: any) => {
+                        const next = { ...prev };
+                        Object.keys(next).forEach(key => {
+                            next[key] = visible;
+                        });
+                        return next;
+                    });
+                }}
                 showDependencies={showDependencies}
                 onToggleDependencies={() => setShowDependencies(!showDependencies)}
                 customDate={customDate}
                 onCustomDateChange={setCustomDate}
             />
+
+            {/* Saving Order Indicator */}
+            {isSavingOrder && (
+                <div className="absolute top-12 left-1/2 -translate-x-1/2 z-[100] bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 text-sm font-medium animate-pulse">
+                    <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    กำลังบันทึก...
+                </div>
+            )}
 
             <div className="flex-1 min-h-0 w-full relative">
                 <div ref={scrollContainerRef} className="absolute inset-0 overflow-auto custom-scrollbar">
@@ -619,6 +746,7 @@ export default function GanttChart({
                                                 getTaskWeight={getTaskWeight}
                                                 onCategoryDragStart={handleCategoryDragStart}
                                                 onCategoryDragOver={handleCategoryDragOver}
+                                                onCategoryDrop={handleCategoryDrop}
                                                 isDragging={categoryDragState?.id === category && categoryDragState?.type === 'category'}
                                                 loadingIds={effectiveLoadingIds}
                                             />
@@ -626,274 +754,284 @@ export default function GanttChart({
                                             {!collapsedCategories.has(category) && (
                                                 <>
                                                     {/* Subcategories */}
-                                                    {Object.entries(catData.subcategories).map(([subcat, subData]) => {
-                                                        const uniqueSubcatId = `${category}::${subcat}`;
-                                                        // Color Priority: Self -> Parent -> Default
-                                                        const color = categoryColors[uniqueSubcatId] || categoryColors[category] || '#3b82f6';
+                                                    {Object.entries(catData.subcategories)
+                                                        .sort(([a], [b]) => {
+                                                            const order = propSubcategoryOrder?.[category];
+                                                            if (!order || order.length === 0) return 0;
+                                                            const ia = order.indexOf(a);
+                                                            const ib = order.indexOf(b);
+                                                            if (ia === -1) return 1;
+                                                            if (ib === -1) return -1;
+                                                            return ia - ib;
+                                                        })
+                                                        .map(([subcat, subData]) => {
+                                                            const uniqueSubcatId = `${category}::${subcat}`;
+                                                            // Color Priority: Self -> Parent -> Default
+                                                            const color = categoryColors[uniqueSubcatId] || categoryColors[category] || '#3b82f6';
 
-                                                        // Calculate Subcategory Summary
-                                                        const subTasks = [
-                                                            ...subData.tasks,
-                                                            ...Object.values(subData.subsubcategories).flat()
-                                                        ];
-                                                        const subSummary = getCategorySummary(subTasks, getTaskWeight);
-                                                        const subDateRange = subSummary.dateRange;
+                                                            // Calculate Subcategory Summary
+                                                            const subTasks = [
+                                                                ...subData.tasks,
+                                                                ...Object.values(subData.subsubcategories).flat()
+                                                            ];
+                                                            const subSummary = getCategorySummary(subTasks, getTaskWeight);
+                                                            const subDateRange = subSummary.dateRange;
 
-                                                        return (
-                                                            <div key={subcat}>
-                                                                {/* Subcategory Header */}
-                                                                <div
-                                                                    className={`flex bg-gray-50/50 border-b border-dashed border-gray-200 h-8 group cursor-pointer hover:bg-gray-100/50 transition-colors ${categoryDragState?.id === uniqueSubcatId && categoryDragState?.type === 'subcategory' ? 'opacity-40 bg-blue-50' : ''}`}
-                                                                    onClick={() => toggleSubcategory(uniqueSubcatId)}
-                                                                    draggable
-                                                                    onDragStart={(e) => handleSubcategoryDragStart(e, uniqueSubcatId, 'subcategory')}
-                                                                    onDragOver={handleCategoryDragOver}
-                                                                    onDrop={(e) => handleSubcategoryDrop(e, uniqueSubcatId)}
-                                                                >
-                                                                    <div className="sticky left-0 z-[60] bg-gray-50 group-hover:bg-gray-100 border-r border-gray-300 pl-2 flex items-center"
-                                                                        style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '24px' }}>
-                                                                        {/* Drag Handle */}
-                                                                        <div className="cursor-grab text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 mr-1">
-                                                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h8v2H8V6zm0 4h8v2H8v-2zm0 4h8v2H8v-2z" /></svg>
-                                                                        </div>
-
-                                                                        {/* Color Picker for Subcategory */}
-                                                                        <button
-                                                                            className="w-2.5 h-2.5 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0 mr-2"
-                                                                            style={{ backgroundColor: color }}
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                const rect = e.currentTarget.getBoundingClientRect();
-                                                                                setActiveColorMenu({
-                                                                                    id: uniqueSubcatId,
-                                                                                    type: 'category', // Use 'category' type so it updates categoryColors map
-                                                                                    top: rect.bottom + window.scrollY,
-                                                                                    left: rect.left + window.scrollX
-                                                                                });
-                                                                            }}
-                                                                            title="Change Subcategory Color"
-                                                                        />
-
-                                                                        <div className="flex-1 flex items-center overflow-hidden">
-                                                                            <div className="flex-1 flex items-center min-w-0 pr-2">
-                                                                                <div className="font-semibold text-xs text-gray-800 truncate" style={{ color: color }}>
-                                                                                    {subcat}
-                                                                                </div>
-                                                                                {onAddTaskToCategory && (
-                                                                                    <button
-                                                                                        className="ml-2 p-0.5 hover:bg-blue-100 rounded-sm text-blue-500 opacity-0 group-hover:opacity-100 shrink-0 ease-in-out duration-200"
-                                                                                        onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat); }}
-                                                                                        title="Add Task to Subcategory"
-                                                                                    >
-                                                                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                                                                    </button>
-                                                                                )}
+                                                            return (
+                                                                <div key={subcat}>
+                                                                    {/* Subcategory Header */}
+                                                                    <div
+                                                                        className={`flex bg-gray-50/50 border-b border-dashed border-gray-200 h-8 group cursor-pointer hover:bg-gray-100/50 transition-colors ${categoryDragState?.id === uniqueSubcatId && categoryDragState?.type === 'subcategory' ? 'opacity-40 bg-blue-50' : ''}`}
+                                                                        onClick={() => toggleSubcategory(uniqueSubcatId)}
+                                                                        draggable
+                                                                        onDragStart={(e) => handleSubcategoryDragStart(e, uniqueSubcatId, 'subcategory')}
+                                                                        onDragOver={handleCategoryDragOver}
+                                                                        onDrop={(e) => handleSubcategoryDrop(e, uniqueSubcatId)}
+                                                                    >
+                                                                        <div className="sticky left-0 z-[60] bg-gray-50 group-hover:bg-gray-100 border-r border-gray-300 pl-2 flex items-center"
+                                                                            style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '24px' }}>
+                                                                            {/* Drag Handle */}
+                                                                            <div className="cursor-grab text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 mr-1">
+                                                                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M8 6h8v2H8V6zm0 4h8v2H8v-2zm0 4h8v2H8v-2z" /></svg>
                                                                             </div>
 
-                                                                            {/* Subcategory Summary Cols */}
-                                                                            {/* Subcategory Summary Cols */}
-                                                                            {visibleColumns.cost && <div className="h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-900 font-bold font-mono w-20 shrink-0 pr-2 truncate">{(subSummary.totalCost || 0).toLocaleString()}</div>}
-                                                                            {visibleColumns.weight && <div className="h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-900 font-bold font-mono w-16 shrink-0 pr-2 truncate">{(subSummary.totalWeight || 0).toFixed(2)}%</div>}
-                                                                            {visibleColumns.quantity && <div className="h-full flex items-center justify-start border-l border-gray-200 w-20 shrink-0 text-left pl-2 truncate"></div>}
-                                                                            {visibleColumns.period && <div className="h-full flex items-center justify-start border-l border-gray-200 w-[130px] shrink-0 text-[10px] text-gray-600 font-mono text-left pl-2 truncate">
-                                                                                {subDateRange ? formatDateRange(subDateRange.start, subDateRange.end) : '-'}
-                                                                            </div>}
-                                                                            {visibleColumns.progress && <div className="h-full flex items-center justify-start border-l border-gray-200 text-xs text-blue-700 font-bold font-mono w-20 shrink-0 pl-2 truncate">{(subSummary.avgProgress || 0).toFixed(0)}%</div>}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Styled Timeline Bar for Subcategory */}
-                                                                    <div className="flex-1 h-full relative overflow-hidden bg-white/50">
-                                                                        {/* Grid Lines (Subtle) */}
-                                                                        <div className="absolute inset-0 flex pointer-events-none">
-                                                                            {timeline.items.map((item, idx) => (
-                                                                                <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200/50 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/30' : ''}`}
-                                                                                    style={{ width: config.cellWidth }} />
-                                                                            ))}
-                                                                        </div>
-
-                                                                        {subDateRange && (
-                                                                            <div
-                                                                                className="absolute h-3 top-[10px] rounded-full border border-gray-400/30"
-                                                                                style={{
-                                                                                    ...getCategoryBarStyle(subDateRange, viewMode, config, timeRange),
-                                                                                    backgroundColor: `${color}30`,
-                                                                                    zIndex: 20
+                                                                            {/* Color Picker for Subcategory */}
+                                                                            <button
+                                                                                className="w-2.5 h-2.5 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0 mr-2"
+                                                                                style={{ backgroundColor: color }}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    const rect = e.currentTarget.getBoundingClientRect();
+                                                                                    setActiveColorMenu({
+                                                                                        id: uniqueSubcatId,
+                                                                                        type: 'category', // Use 'category' type so it updates categoryColors map
+                                                                                        top: rect.bottom + window.scrollY,
+                                                                                        left: rect.left + window.scrollX
+                                                                                    });
                                                                                 }}
-                                                                            >
-                                                                                <div
-                                                                                    className="absolute left-0 top-0 bottom-0 rounded-full"
-                                                                                    style={{
-                                                                                        width: `${subSummary.avgProgress}%`,
-                                                                                        backgroundColor: color,
-                                                                                        opacity: 0.7
-                                                                                    }}
-                                                                                />
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-
-                                                                {!collapsedSubcategories.has(uniqueSubcatId) && (
-                                                                    <>
-                                                                        {/* Sub-Subcategories */}
-                                                                        {Object.entries(subData.subsubcategories).map(([subsub, tasks]) => {
-                                                                            const uniqueSubsubId = `${category}::${subcat}::${subsub}`;
-                                                                            // Color Priority: Self -> Parent (Subcat) -> Grandparent (Category) -> Default
-                                                                            const subColor = categoryColors[uniqueSubsubId] || color;
-
-                                                                            // Sub-Sub Summary
-                                                                            const subsubSummary = getCategorySummary(tasks, getTaskWeight);
-                                                                            const subsubDateRange = subsubSummary.dateRange;
-
-                                                                            return (
-                                                                                <div key={subsub}>
-                                                                                    {/* SubSub Header */}
-                                                                                    <div className="h-7 flex items-center bg-gray-50/20 border-b border-dotted border-gray-100 group" >
-                                                                                        <div className="sticky left-0 z-[59] flex items-center border-r border-gray-300 pl-2 bg-gray-50/20"
-                                                                                            style={{ width: stickyWidth, minWidth: stickyWidth, paddingLeft: 40 }}>
-
-                                                                                            {/* Color Picker for Sub-Subcategory */}
-                                                                                            <button
-                                                                                                className="w-2 h-2 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0 mr-2"
-                                                                                                style={{ backgroundColor: subColor }}
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    const rect = e.currentTarget.getBoundingClientRect();
-                                                                                                    setActiveColorMenu({
-                                                                                                        id: uniqueSubsubId,
-                                                                                                        type: 'category',
-                                                                                                        top: rect.bottom + window.scrollY,
-                                                                                                        left: rect.left + window.scrollX
-                                                                                                    });
-                                                                                                }}
-                                                                                                title="Change Sub-subcategory Color"
-                                                                                            />
-
-                                                                                            <div className="flex-1 flex items-center overflow-hidden">
-                                                                                                <div className="flex-1 flex items-center min-w-0 pr-2">
-                                                                                                    <span className="text-[11px] text-gray-600 font-bold italic truncate">{subsub}</span>
-
-                                                                                                    {onAddTaskToCategory && (
-                                                                                                        <button
-                                                                                                            className="ml-2 p-0.5 text-blue-400 hover:text-blue-600 bg-transparent hover:bg-blue-50 rounded opacity-0 group-hover:opacity-100 shrink-0 ease-in-out duration-200"
-                                                                                                            onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat, subsub); }}
-                                                                                                            title="Add Task to Sub-subcategory"
-                                                                                                        >
-                                                                                                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                                                                                                        </button>
-                                                                                                    )}
-                                                                                                </div>
-
-                                                                                                {/* SubSub Cols */}
-                                                                                                {visibleColumns.cost && <div className="h-full flex items-center justify-end border-l border-gray-200 text-[10px] text-gray-900 font-bold font-mono w-20 shrink-0 pr-2 truncate">{(subsubSummary.totalCost || 0).toLocaleString()}</div>}
-                                                                                                {visibleColumns.weight && <div className="h-full flex items-center justify-end border-l border-gray-200 text-[10px] text-gray-900 font-bold font-mono w-16 shrink-0 pr-2 truncate">{(subsubSummary.totalWeight || 0).toFixed(2)}%</div>}
-                                                                                                {visibleColumns.quantity && <div className="h-full flex items-center justify-start border-l border-gray-200 w-20 shrink-0 text-left pl-2 truncate"></div>}
-                                                                                                {visibleColumns.period && <div className="h-full flex items-center justify-start border-l border-gray-200 w-[130px] shrink-0 text-[9px] text-gray-500 font-mono text-left pl-2 truncate">
-                                                                                                    {subsubDateRange ? formatDateRange(subsubDateRange.start, subsubDateRange.end) : '-'}
-                                                                                                </div>}
-                                                                                                {visibleColumns.progress && <div className="h-full flex items-center justify-start border-l border-gray-200 text-[10px] text-blue-700 font-bold font-mono w-20 shrink-0 pl-2 truncate">{(subsubSummary.avgProgress || 0).toFixed(0)}%</div>}
-                                                                                            </div>
-                                                                                        </div>
-
-                                                                                        {/* Timeline Bar for SubSub */}
-                                                                                        <div className="flex-1 h-full relative overflow-hidden opacity-80">
-                                                                                            {/* Grid Lines (Subtle) */}
-                                                                                            <div className="absolute inset-0 flex pointer-events-none">
-                                                                                                {timeline.items.map((item, idx) => (
-                                                                                                    <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200/30 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/20' : ''}`}
-                                                                                                        style={{ width: config.cellWidth }} />
-                                                                                                ))}
-                                                                                            </div>
-
-                                                                                            {subsubDateRange && (
-                                                                                                <div
-                                                                                                    className="absolute h-2.5 top-[9px] rounded-full border border-gray-400/20"
-                                                                                                    style={{
-                                                                                                        ...getCategoryBarStyle(subsubDateRange, viewMode, config, timeRange),
-                                                                                                        backgroundColor: `${subColor}20`,
-                                                                                                        zIndex: 10
-                                                                                                    }}
-                                                                                                >
-                                                                                                    <div
-                                                                                                        className="absolute left-0 top-0 bottom-0 rounded-full"
-                                                                                                        style={{
-                                                                                                            width: `${subsubSummary.avgProgress}%`,
-                                                                                                            backgroundColor: subColor,
-                                                                                                            opacity: 0.6
-                                                                                                        }}
-                                                                                                    />
-                                                                                                </div>
-                                                                                            )}
-                                                                                        </div>
-
-                                                                                    </div>
-                                                                                    {tasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(t => (
-                                                                                        <TaskRow
-                                                                                            key={t.id} task={t} level={2}
-                                                                                            tasks={optimisticTasks} config={config} viewMode={viewMode}
-                                                                                            timeRange={timeRange} visibleColumns={visibleColumns} stickyWidth={stickyWidth}
-                                                                                            timeline={timeline} collapsedTasks={collapsedTasks} dragState={dragState}
-                                                                                            rowDragState={rowDragState} dropTargetId={dropTargetId} dropPosition={dropPosition}
-                                                                                            isUpdating={isDragUpdating} showDependencies={showDependencies} dependencySource={dependencySource}
-                                                                                            getTaskWeight={getTaskWeight} hasChildren={hasChildren} getChildTasks={getChildTasks}
-                                                                                            onTaskUpdate={onTaskUpdate} onAddSubTask={onAddSubTask} toggleTaskCollapse={toggleTaskCollapse}
-                                                                                            handleRowDragStart={handleRowDragStart} handleRowDragOver={handleRowDragOver}
-                                                                                            handleRowDragLeave={handleRowDragLeave} handleRowDrop={handleRowDrop} handleRowDragEnd={handleRowDragEnd}
-                                                                                            handleRemoveFromParent={handleRemoveFromParent} setActiveColorMenu={setActiveColorMenu}
-                                                                                            handleDependencyClick={handleDependencyClick} setModalConfig={setModalConfig} startDrag={startDrag}
-                                                                                            loadingIds={effectiveLoadingIds}
-                                                                                        />
-                                                                                    ))}
-                                                                                </div>
-                                                                            );
-                                                                        })}
-
-                                                                        {/* Direct Tasks in Subcat */}
-                                                                        {subData.tasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(t => (
-                                                                            <TaskRow
-                                                                                key={t.id}
-                                                                                task={t}
-                                                                                level={1}
-                                                                                tasks={optimisticTasks}
-                                                                                config={config}
-                                                                                viewMode={viewMode}
-                                                                                timeRange={timeRange}
-                                                                                visibleColumns={visibleColumns}
-                                                                                stickyWidth={stickyWidth}
-                                                                                timeline={timeline}
-                                                                                collapsedTasks={collapsedTasks}
-                                                                                dragState={dragState}
-                                                                                rowDragState={rowDragState}
-                                                                                dropTargetId={dropTargetId}
-                                                                                dropPosition={dropPosition}
-                                                                                isUpdating={isDragUpdating}
-                                                                                showDependencies={showDependencies}
-                                                                                dependencySource={dependencySource}
-                                                                                getTaskWeight={getTaskWeight}
-                                                                                hasChildren={hasChildren}
-                                                                                getChildTasks={getChildTasks}
-                                                                                onTaskUpdate={onTaskUpdate}
-                                                                                onAddSubTask={onAddSubTask}
-                                                                                toggleTaskCollapse={toggleTaskCollapse}
-                                                                                handleRowDragStart={handleRowDragStart}
-                                                                                handleRowDragOver={handleRowDragOver}
-                                                                                handleRowDragLeave={handleRowDragLeave}
-                                                                                handleRowDrop={handleRowDrop}
-                                                                                handleRowDragEnd={handleRowDragEnd}
-                                                                                handleRemoveFromParent={handleRemoveFromParent}
-                                                                                setActiveColorMenu={setActiveColorMenu}
-                                                                                handleDependencyClick={handleDependencyClick}
-                                                                                setModalConfig={setModalConfig}
-                                                                                startDrag={startDrag}
-                                                                                loadingIds={effectiveLoadingIds}
+                                                                                title="Change Subcategory Color"
                                                                             />
-                                                                        ))}
-                                                                    </>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
+
+                                                                            <div className="flex-1 flex items-center overflow-hidden">
+                                                                                <div className="flex-1 flex items-center min-w-0 pr-2">
+                                                                                    <div className="font-semibold text-xs text-gray-800 truncate" style={{ color: color }}>
+                                                                                        {subcat}
+                                                                                    </div>
+                                                                                    {onAddTaskToCategory && (
+                                                                                        <button
+                                                                                            className="ml-2 p-0.5 hover:bg-blue-100 rounded-sm text-blue-500 opacity-0 group-hover:opacity-100 shrink-0 ease-in-out duration-200"
+                                                                                            onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat); }}
+                                                                                            title="Add Task to Subcategory"
+                                                                                        >
+                                                                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+
+                                                                                {/* Subcategory Summary Cols */}
+                                                                                {/* Subcategory Summary Cols */}
+                                                                                {visibleColumns.cost && <div className="h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-900 font-bold font-mono w-20 shrink-0 pr-2 truncate">{(subSummary.totalCost || 0).toLocaleString()}</div>}
+                                                                                {visibleColumns.weight && <div className="h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-900 font-bold font-mono w-16 shrink-0 pr-2 truncate">{(subSummary.totalWeight || 0).toFixed(2)}%</div>}
+                                                                                {visibleColumns.quantity && <div className="h-full flex items-center justify-start border-l border-gray-200 w-20 shrink-0 text-left pl-2 truncate"></div>}
+                                                                                {visibleColumns.period && <div className="h-full flex items-center justify-start border-l border-gray-200 w-[130px] shrink-0 text-[10px] text-gray-600 font-mono text-left pl-2 truncate">
+                                                                                    {subDateRange ? formatDateRange(subDateRange.start, subDateRange.end) : '-'}
+                                                                                </div>}
+                                                                                {visibleColumns.progress && <div className="h-full flex items-center justify-start border-l border-gray-200 text-xs text-blue-700 font-bold font-mono w-20 shrink-0 pl-2 truncate">{(subSummary.avgProgress || 0).toFixed(0)}%</div>}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Styled Timeline Bar for Subcategory */}
+                                                                        <div className="flex-1 h-full relative overflow-hidden bg-white/50">
+                                                                            {/* Grid Lines (Subtle) */}
+                                                                            <div className="absolute inset-0 flex pointer-events-none">
+                                                                                {timeline.items.map((item, idx) => (
+                                                                                    <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200/50 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/30' : ''}`}
+                                                                                        style={{ width: config.cellWidth }} />
+                                                                                ))}
+                                                                            </div>
+
+                                                                            {subDateRange && (
+                                                                                <div
+                                                                                    className="absolute h-3 top-[10px] rounded-full border border-gray-400/30"
+                                                                                    style={{
+                                                                                        ...getCategoryBarStyle(subDateRange, viewMode, config, timeRange),
+                                                                                        backgroundColor: `${color}30`,
+                                                                                        zIndex: 20
+                                                                                    }}
+                                                                                >
+                                                                                    <div
+                                                                                        className="absolute left-0 top-0 bottom-0 rounded-full"
+                                                                                        style={{
+                                                                                            width: `${subSummary.avgProgress}%`,
+                                                                                            backgroundColor: color,
+                                                                                            opacity: 0.7
+                                                                                        }}
+                                                                                    />
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {!collapsedSubcategories.has(uniqueSubcatId) && (
+                                                                        <>
+                                                                            {/* Sub-Subcategories */}
+                                                                            {Object.entries(subData.subsubcategories).map(([subsub, tasks]) => {
+                                                                                const uniqueSubsubId = `${category}::${subcat}::${subsub}`;
+                                                                                // Color Priority: Self -> Parent (Subcat) -> Grandparent (Category) -> Default
+                                                                                const subColor = categoryColors[uniqueSubsubId] || color;
+
+                                                                                // Sub-Sub Summary
+                                                                                const subsubSummary = getCategorySummary(tasks, getTaskWeight);
+                                                                                const subsubDateRange = subsubSummary.dateRange;
+
+                                                                                return (
+                                                                                    <div key={subsub}>
+                                                                                        {/* SubSub Header */}
+                                                                                        <div className="h-7 flex items-center bg-gray-50/20 border-b border-dotted border-gray-100 group" >
+                                                                                            <div className="sticky left-0 z-[59] flex items-center border-r border-gray-300 pl-2 bg-gray-50/20"
+                                                                                                style={{ width: stickyWidth, minWidth: stickyWidth, paddingLeft: 40 }}>
+
+                                                                                                {/* Color Picker for Sub-Subcategory */}
+                                                                                                <button
+                                                                                                    className="w-2 h-2 rounded-full border border-gray-300 hover:scale-110 transition-transform shadow-sm flex-shrink-0 mr-2"
+                                                                                                    style={{ backgroundColor: subColor }}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                                                                        setActiveColorMenu({
+                                                                                                            id: uniqueSubsubId,
+                                                                                                            type: 'category',
+                                                                                                            top: rect.bottom + window.scrollY,
+                                                                                                            left: rect.left + window.scrollX
+                                                                                                        });
+                                                                                                    }}
+                                                                                                    title="Change Sub-subcategory Color"
+                                                                                                />
+
+                                                                                                <div className="flex-1 flex items-center overflow-hidden">
+                                                                                                    <div className="flex-1 flex items-center min-w-0 pr-2">
+                                                                                                        <span className="text-[11px] text-gray-600 font-bold italic truncate">{subsub}</span>
+
+                                                                                                        {onAddTaskToCategory && (
+                                                                                                            <button
+                                                                                                                className="ml-2 p-0.5 text-blue-400 hover:text-blue-600 bg-transparent hover:bg-blue-50 rounded opacity-0 group-hover:opacity-100 shrink-0 ease-in-out duration-200"
+                                                                                                                onClick={(e) => { e.stopPropagation(); onAddTaskToCategory(category, subcat, subsub); }}
+                                                                                                                title="Add Task to Sub-subcategory"
+                                                                                                            >
+                                                                                                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                                                                                            </button>
+                                                                                                        )}
+                                                                                                    </div>
+
+                                                                                                    {/* SubSub Cols */}
+                                                                                                    {visibleColumns.cost && <div className="h-full flex items-center justify-end border-l border-gray-200 text-[10px] text-gray-900 font-bold font-mono w-20 shrink-0 pr-2 truncate">{(subsubSummary.totalCost || 0).toLocaleString()}</div>}
+                                                                                                    {visibleColumns.weight && <div className="h-full flex items-center justify-end border-l border-gray-200 text-[10px] text-gray-900 font-bold font-mono w-16 shrink-0 pr-2 truncate">{(subsubSummary.totalWeight || 0).toFixed(2)}%</div>}
+                                                                                                    {visibleColumns.quantity && <div className="h-full flex items-center justify-start border-l border-gray-200 w-20 shrink-0 text-left pl-2 truncate"></div>}
+                                                                                                    {visibleColumns.period && <div className="h-full flex items-center justify-start border-l border-gray-200 w-[130px] shrink-0 text-[9px] text-gray-500 font-mono text-left pl-2 truncate">
+                                                                                                        {subsubDateRange ? formatDateRange(subsubDateRange.start, subsubDateRange.end) : '-'}
+                                                                                                    </div>}
+                                                                                                    {visibleColumns.progress && <div className="h-full flex items-center justify-start border-l border-gray-200 text-[10px] text-blue-700 font-bold font-mono w-20 shrink-0 pl-2 truncate">{(subsubSummary.avgProgress || 0).toFixed(0)}%</div>}
+                                                                                                </div>
+                                                                                            </div>
+
+                                                                                            {/* Timeline Bar for SubSub */}
+                                                                                            <div className="flex-1 h-full relative overflow-hidden opacity-80">
+                                                                                                {/* Grid Lines (Subtle) */}
+                                                                                                <div className="absolute inset-0 flex pointer-events-none">
+                                                                                                    {timeline.items.map((item, idx) => (
+                                                                                                        <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200/30 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/20' : ''}`}
+                                                                                                            style={{ width: config.cellWidth }} />
+                                                                                                    ))}
+                                                                                                </div>
+
+                                                                                                {subsubDateRange && (
+                                                                                                    <div
+                                                                                                        className="absolute h-2.5 top-[9px] rounded-full border border-gray-400/20"
+                                                                                                        style={{
+                                                                                                            ...getCategoryBarStyle(subsubDateRange, viewMode, config, timeRange),
+                                                                                                            backgroundColor: `${subColor}20`,
+                                                                                                            zIndex: 10
+                                                                                                        }}
+                                                                                                    >
+                                                                                                        <div
+                                                                                                            className="absolute left-0 top-0 bottom-0 rounded-full"
+                                                                                                            style={{
+                                                                                                                width: `${subsubSummary.avgProgress}%`,
+                                                                                                                backgroundColor: subColor,
+                                                                                                                opacity: 0.6
+                                                                                                            }}
+                                                                                                        />
+                                                                                                    </div>
+                                                                                                )}
+                                                                                            </div>
+
+                                                                                        </div>
+                                                                                        {tasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(t => (
+                                                                                            <TaskRow
+                                                                                                key={t.id} task={t} level={2}
+                                                                                                tasks={optimisticTasks} config={config} viewMode={viewMode}
+                                                                                                timeRange={timeRange} visibleColumns={visibleColumns} stickyWidth={stickyWidth}
+                                                                                                timeline={timeline} collapsedTasks={collapsedTasks} dragState={dragState}
+                                                                                                rowDragState={rowDragState} dropTargetId={dropTargetId} dropPosition={dropPosition}
+                                                                                                isUpdating={isDragUpdating} showDependencies={showDependencies} dependencySource={dependencySource}
+                                                                                                getTaskWeight={getTaskWeight} hasChildren={hasChildren} getChildTasks={getChildTasks}
+                                                                                                onTaskUpdate={onTaskUpdate} onAddSubTask={onAddSubTask} toggleTaskCollapse={toggleTaskCollapse}
+                                                                                                handleRowDragStart={handleRowDragStart} handleRowDragOver={handleRowDragOver}
+                                                                                                handleRowDragLeave={handleRowDragLeave} handleRowDrop={handleRowDrop} handleRowDragEnd={handleRowDragEnd}
+                                                                                                handleRemoveFromParent={handleRemoveFromParent} setActiveColorMenu={setActiveColorMenu}
+                                                                                                handleDependencyClick={handleDependencyClick} setModalConfig={setModalConfig} startDrag={startDrag}
+                                                                                                loadingIds={effectiveLoadingIds}
+                                                                                            />
+                                                                                        ))}
+                                                                                    </div>
+                                                                                );
+                                                                            })}
+
+                                                                            {/* Direct Tasks in Subcat */}
+                                                                            {subData.tasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(t => (
+                                                                                <TaskRow
+                                                                                    key={t.id}
+                                                                                    task={t}
+                                                                                    level={1}
+                                                                                    tasks={optimisticTasks}
+                                                                                    config={config}
+                                                                                    viewMode={viewMode}
+                                                                                    timeRange={timeRange}
+                                                                                    visibleColumns={visibleColumns}
+                                                                                    stickyWidth={stickyWidth}
+                                                                                    timeline={timeline}
+                                                                                    collapsedTasks={collapsedTasks}
+                                                                                    dragState={dragState}
+                                                                                    rowDragState={rowDragState}
+                                                                                    dropTargetId={dropTargetId}
+                                                                                    dropPosition={dropPosition}
+                                                                                    isUpdating={isDragUpdating}
+                                                                                    showDependencies={showDependencies}
+                                                                                    dependencySource={dependencySource}
+                                                                                    getTaskWeight={getTaskWeight}
+                                                                                    hasChildren={hasChildren}
+                                                                                    getChildTasks={getChildTasks}
+                                                                                    onTaskUpdate={onTaskUpdate}
+                                                                                    onAddSubTask={onAddSubTask}
+                                                                                    toggleTaskCollapse={toggleTaskCollapse}
+                                                                                    handleRowDragStart={handleRowDragStart}
+                                                                                    handleRowDragOver={handleRowDragOver}
+                                                                                    handleRowDragLeave={handleRowDragLeave}
+                                                                                    handleRowDrop={handleRowDrop}
+                                                                                    handleRowDragEnd={handleRowDragEnd}
+                                                                                    handleRemoveFromParent={handleRemoveFromParent}
+                                                                                    setActiveColorMenu={setActiveColorMenu}
+                                                                                    handleDependencyClick={handleDependencyClick}
+                                                                                    setModalConfig={setModalConfig}
+                                                                                    startDrag={startDrag}
+                                                                                    loadingIds={effectiveLoadingIds}
+                                                                                />
+                                                                            ))}
+                                                                        </>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
 
                                                     {/* Direct Tasks in Category */}
                                                     {catData.tasks.sort((a, b) => (a.order || 0) - (b.order || 0)).map(t => (

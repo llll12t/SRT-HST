@@ -129,6 +129,14 @@ export default function SCurvePage() {
                     )}
 
                     <Link
+                        href={`/gantt/${selectedProjectId}`}
+                        className="px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-sm flex items-center gap-1.5 hover:bg-orange-100 transition-colors"
+                    >
+                        <Calendar className="w-4 h-4" />
+                        Gantt Chart
+                    </Link>
+
+                    <Link
                         href={`/projects/${selectedProjectId}`}
                         className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-sm flex items-center gap-1.5 hover:bg-blue-100 transition-colors"
                     >
