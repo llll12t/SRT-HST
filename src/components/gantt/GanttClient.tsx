@@ -306,46 +306,62 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
                 const parseDate = (val: string): string | null => {
                     if (!val || val === '-' || val.trim() === '') return null;
-                    const cleaned = val.trim();
+                    const cleaned = String(val).trim();
+                    // dd/MM/yyyy or dd-MM-yyyy
+                    if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/.test(cleaned)) {
+                        const [d, m, y] = cleaned.split(/[\/-]/);
+                        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                    }
+                    // dd/MM/yy or dd-MM-yy
+                    if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2}$/.test(cleaned)) {
+                        const [d, m, y] = cleaned.split(/[\/-]/);
+                        const fullYear = parseInt(y) < 50 ? `20${y}` : `19${y}`;
+                        return `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+                    }
+                    // yyyy-MM-dd (Auto fallback)
                     if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return cleaned;
 
-                    // Support d/m/yyyy or dd/mm/yyyy
-                    const dmyMatch = cleaned.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-                    if (dmyMatch) {
-                        const [_, day, month, year] = dmyMatch;
-                        return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-                    }
-
-                    // Support short year
-                    if (/^\d{1,2}\/\d{1,2}\/\d{2}$/.test(cleaned)) {
-                        const [day, month, year] = cleaned.split('/');
-                        const fullYear = parseInt(year) < 50 ? `20${year}` : `19${year}`;
-                        return `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-                    }
-
+                    // Fallback to Date parse for other standard formats
                     const d = new Date(cleaned);
                     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+
                     return null;
                 };
 
-                let planStart = parseDate(row['Plan Start'] || row['Start']);
-                if (!planStart) planStart = format(new Date(), 'yyyy-MM-dd');
+                const planStartRaw = row['Plan Start'] || row['PlanStartDate'] || row['Start Date'] || row['วันเริ่มต้น'] || row['วันเริ่ม'] || row['Start'];
+                const planEndRaw = row['Plan End'] || row['PlanEndDate'] || row['End Date'] || row['วันสิ้นสุด'] || row['วันจบ'] || row['End'];
+                const durationRaw = row['Duration'] || row['Duration (Days)'] || row['PlanDuration'] || row['Days'] || row['ระยะเวลา'] || row['จำนวนวัน'] || '0';
 
-                let planEnd = parseDate(row['Plan End'] || row['End']);
-                const durationInput = parseInt(row['Duration'] || row['Duration (Days)']);
+                let planStart = parseDate(planStartRaw);
+                if (!planStart && !planEndRaw) planStart = format(new Date(), 'yyyy-MM-dd'); // Default only if totally empty? Or keep strict? Keeping existing behavior of default today if missing.
 
-                // Priority: Plan End > Duration
-                let duration = 1;
-                if (planEnd) {
-                    const start = parseISO(planStart);
-                    const end = parseISO(planEnd);
-                    duration = differenceInDays(end, start) + 1;
-                    if (duration < 1) duration = 1;
-                } else {
-                    duration = durationInput || 1;
-                    const startDateParams = parseISO(planStart);
-                    const endDateParams = addDays(startDateParams, duration - 1);
-                    planEnd = format(endDateParams, 'yyyy-MM-dd');
+                let planEnd = parseDate(planEndRaw);
+
+                // Flexible duration parsing
+                const durationVal = Math.ceil(parseFloat(String(durationRaw).replace(/,/g, ''))) || 0;
+                let duration = Math.max(1, durationVal);
+
+                // Auto calculate Plan End if missing
+                if (planStart && duration > 0 && !planEnd) {
+                    try {
+                        const startDate = parseISO(planStart);
+                        planEnd = format(addDays(startDate, duration - 1), 'yyyy-MM-dd');
+                    } catch (e) {
+                        console.error('Error calculating end date:', e);
+                    }
+                }
+
+                // If Plan End exists but Duration is different (priority check), usually we trust dates over duration for consistency if both exist,
+                // BUT if we just calculated Plan End, they are consistent.
+                // If the user provided both, we might want to recalc duration to match dates or vice versa.
+                // Standard practice: Dates rule. Recalc duration from dates if both dates exist.
+                if (planStart && planEnd) {
+                    try {
+                        const start = parseISO(planStart);
+                        const end = parseISO(planEnd);
+                        const diff = differenceInDays(end, start) + 1;
+                        duration = diff > 0 ? diff : 1;
+                    } catch { }
                 }
 
                 // Parse Numbers safely

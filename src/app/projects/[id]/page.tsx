@@ -832,14 +832,17 @@ export default function ProjectDetailPage() {
                 const subsubcategory = row['SubSubcategory'] || row['Sub Subcategory'] || row['หมวดหมู่ย่อย 2'] || row['หมวดหมู่ย่อยระดับ 3'] || '';
                 const type = (row['Type'] || 'task').toLowerCase() as 'task' | 'group';
 
-                const planStart = row['Plan Start'] || row['PlanStartDate'] || row['วันเริ่มต้น'] || '';
-                const planEnd = row['Plan End'] || row['PlanEndDate'] || row['วันสิ้นสุด'] || '';
-                const duration = parseInt(row['Duration'] || row['Duration (Days)'] || row['PlanDuration'] || row['ระยะเวลา'] || '0');
+                const planStart = row['Plan Start'] || row['PlanStartDate'] || row['Start Date'] || row['วันเริ่มต้น'] || row['วันเริ่ม'] || '';
+                const planEnd = row['Plan End'] || row['PlanEndDate'] || row['End Date'] || row['วันสิ้นสุด'] || row['วันจบ'] || '';
+
+                // Flexible duration parsing
+                const rawDuration = row['Duration'] || row['Duration (Days)'] || row['PlanDuration'] || row['Days'] || row['ระยะเวลา'] || row['จำนวนวัน'] || '0';
+                const duration = Math.ceil(parseFloat(String(rawDuration).replace(/,/g, ''))) || 0;
 
                 // Helper to fix dates
                 const fixDate = (val: string) => {
                     if (!val || val === '-') return '';
-                    const cleaned = val.trim();
+                    const cleaned = String(val).trim();
                     // dd/MM/yyyy or dd-MM-yyyy
                     if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/.test(cleaned)) {
                         const [d, m, y] = cleaned.split(/[\/-]/);
@@ -860,11 +863,15 @@ export default function ProjectDetailPage() {
                 const pStart = fixDate(planStart);
                 let pEnd = fixDate(planEnd);
 
-                // Recalc end date if duration exists but end date doesn't
+                // Automatically calculate Plan End from Duration if Plan Start exists
+                // If Plan End is missing, we calculate it.
                 if (pStart && duration > 0 && !pEnd) {
                     try {
-                        pEnd = format(addDays(parseISO(pStart), duration - 1), 'yyyy-MM-dd');
-                    } catch { }
+                        const startDate = parseISO(pStart);
+                        pEnd = format(addDays(startDate, duration - 1), 'yyyy-MM-dd');
+                    } catch (e) {
+                        console.error('Error calculating end date:', e);
+                    }
                 }
 
                 newTasks.push({
@@ -1060,6 +1067,21 @@ export default function ProjectDetailPage() {
                 </div>
 
                 <div className="flex items-center gap-2 self-end md:self-auto">
+                    <Link
+                        href={`/gantt/${projectId}`}
+                        className="px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 rounded-sm transition-all flex items-center gap-2 shadow-sm"
+                    >
+                        <Calendar className="w-4 h-4 text-blue-600" />
+                        Gantt Chart
+                    </Link>
+                    <Link
+                        href={`/scurve/${projectId}`}
+                        className="px-3 py-2 text-xs font-medium text-gray-700 bg-white hover:bg-gray-50 border border-gray-300 rounded-sm transition-all flex items-center gap-2 shadow-sm"
+                    >
+                        <TrendingUp className="w-4 h-4 text-emerald-600" />
+                        S-Curve
+                    </Link>
+
                     {canEdit && (
                         <>
                             <div className="hidden md:flex items-center bg-gray-50 rounded-sm p-1 border border-gray-300">
