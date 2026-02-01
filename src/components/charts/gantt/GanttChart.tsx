@@ -382,16 +382,21 @@ export default function GanttChart({
 
     // Calculate budget/stats
     const budgetStats = useMemo(() => {
-        const totalCost = optimisticTasks.reduce((sum, t) => sum + (t.cost || 0), 0);
-        const totalDuration = optimisticTasks.reduce((sum, t) => {
+        // Filter only leaf tasks for statistics to avoid double counting groups
+        const leafTasks = optimisticTasks.filter(t => t.type !== 'group');
+        const totalCost = leafTasks.reduce((sum, t) => sum + (t.cost || 0), 0);
+        const totalDuration = leafTasks.reduce((sum, t) => {
             const d = differenceInDays(parseISO(t.planEndDate), parseISO(t.planStartDate)) + 1;
             return sum + Math.max(0, d);
         }, 0);
-        const useCostWeighting = optimisticTasks.some(t => (t.cost || 0) > 0);
+        const useCostWeighting = leafTasks.some(t => (t.cost || 0) > 0);
         return { totalCost, totalDuration, useCostWeighting, totalWeight: useCostWeighting ? totalCost : totalDuration };
     }, [optimisticTasks]);
 
     const getTaskWeight = (task: Task) => {
+        // Groups don't have intrinsic weight (they are containers)
+        if (task.type === 'group') return 0;
+
         if (budgetStats.totalWeight <= 0) return 0;
         if (budgetStats.useCostWeighting) return ((task.cost || 0) / budgetStats.totalWeight) * 100;
         const duration = differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1;
@@ -716,6 +721,85 @@ export default function GanttChart({
                                 />
                             )}
 
+                            {/* Project Summary Row */}
+                            {(() => {
+                                const leafTasks = optimisticTasks.filter(t => t.type !== 'group');
+                                const projSummary = getCategorySummary(leafTasks, getTaskWeight);
+                                const displayProgress = summaryStats.progress;
+                                const displayCost = summaryStats.cost;
+                                const projDateRange = projSummary.dateRange;
+
+                                return (
+                                    <div className="border-b-2 border-gray-300 stick-project-header">
+                                        <div className="flex bg-blue-50 border-b border-gray-200 h-9 font-bold text-gray-800">
+                                            <div className="sticky left-0 z-[60] bg-blue-50 border-r border-gray-300 pl-4 flex items-center shadow-[1px_0_0px_rgba(0,0,0,0.05)]"
+                                                style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
+                                                <div className="flex-1 truncate uppercase tracking-wider flex items-center">
+                                                    <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.5 rounded mr-2">PROJECT</span>
+                                                    {title || "Construction Project"}
+                                                    <span className="ml-2 text-[9px] text-gray-500 font-normal bg-white/50 px-1.5 rounded-full">{leafTasks.length} items</span>
+                                                </div>
+
+                                                {/* Columns */}
+                                                {visibleColumns.cost && (
+                                                    <div className="w-20 h-full flex items-center justify-end border-l border-gray-300/50 text-xs shrink-0 pr-2 truncate">
+                                                        {displayCost.toLocaleString()}
+                                                    </div>
+                                                )}
+                                                {visibleColumns.weight && (
+                                                    <div className="w-16 h-full flex items-center justify-end border-l border-gray-300/50 text-xs shrink-0 pr-2 truncate">
+                                                        100%
+                                                    </div>
+                                                )}
+                                                {visibleColumns.quantity && (
+                                                    <div className="w-20 h-full flex items-center justify-start border-l border-gray-300/50 shrink-0 pl-2 truncate">
+                                                        -
+                                                    </div>
+                                                )}
+                                                {visibleColumns.period && (
+                                                    <div className="w-[130px] h-full flex items-center justify-start border-l border-gray-300/50 text-[10px] shrink-0 pl-2 truncate">
+                                                        {projDateRange ? formatDateRange(projDateRange.start, projDateRange.end) : '-'}
+                                                    </div>
+                                                )}
+                                                {visibleColumns.progress && (
+                                                    <div className="w-20 h-full flex items-center justify-start border-l border-gray-300/50 shrink-0 gap-1 pl-2 truncate text-blue-700">
+                                                        {displayProgress.toFixed(0)}%
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Project Bar Chart */}
+                                            <div className="flex-1 relative" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
+                                                <div className="absolute inset-0 flex pointer-events-none">
+                                                    {timeline.items.map((item, idx) => (
+                                                        <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/50' : ''}`}
+                                                            style={{ width: config.cellWidth }} />
+                                                    ))}
+                                                </div>
+                                                {projDateRange && (
+                                                    <div
+                                                        className="absolute h-4 top-[10px] rounded-full border border-blue-600/30 shadow-sm"
+                                                        style={{
+                                                            ...getCategoryBarStyle(projDateRange, viewMode, config, timeRange),
+                                                            backgroundColor: 'rgba(59, 130, 246, 0.25)',
+                                                            zIndex: 35
+                                                        }}
+                                                    >
+                                                        <div
+                                                            className="absolute left-0 top-0 bottom-0 rounded-full bg-blue-600"
+                                                            style={{
+                                                                width: `${displayProgress}%`,
+                                                                opacity: 0.9
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
                             {Object.keys(groupedTasks)
                                 .sort((a, b) => {
                                     if (categoryOrder.length === 0) return 0;
@@ -888,7 +972,7 @@ export default function GanttChart({
                                                                                     <div key={subsub}>
                                                                                         {/* SubSub Header */}
                                                                                         <div className="h-7 flex items-center bg-gray-50/20 border-b border-dotted border-gray-100 group" >
-                                                                                            <div className="sticky left-0 z-[59] flex items-center border-r border-gray-300 pl-2 bg-gray-50/20"
+                                                                                            <div className="sticky left-0 z-[59] flex items-center border-r border-gray-300 pl-2 bg-gray-50"
                                                                                                 style={{ width: stickyWidth, minWidth: stickyWidth, paddingLeft: 40 }}>
 
                                                                                                 {/* Color Picker for Sub-Subcategory */}

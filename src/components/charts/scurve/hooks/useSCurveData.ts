@@ -105,6 +105,11 @@ export function useSCurveData(tasks: Task[], timeRange: { start: Date, end: Date
                     const idx = startIdx + i;
                     if (idx >= 0 && idx < totalProjectDays) {
                         actualDaily[idx] += dailyActual;
+                    } else if (idx < 0) {
+                        // If actual work happened before chart start, assume it contributes to the initial state (index 0)
+                        // Or spread it? Standard S-Curve starts at 0.
+                        // Better to accumulate it into index 0 so it's not lost.
+                        if (totalProjectDays > 0) actualDaily[0] += dailyActual;
                     }
                 }
             }
@@ -117,12 +122,19 @@ export function useSCurveData(tasks: Task[], timeRange: { start: Date, end: Date
             if (t.actualEndDate) {
                 const d = parseDate(t.actualEndDate);
                 if (isValid(d) && isAfter(d, maxActualDate)) maxActualDate = d;
+            } else if (t.status === 'completed' && t.actualStartDate) {
+                // Fallback for completed tasks without explicit end date (shouldn't happen with valid data but safety)
+                const d = parseDate(t.actualStartDate);
+                if (isValid(d) && isAfter(d, maxActualDate)) maxActualDate = d;
             }
         });
+
+        // Ensure Max Actual Date covers the full day (extend to next day start for < check)
+        maxActualDate = addDays(maxActualDate, 1);
+
         if (leafTasks.some(t => t.status === 'in-progress')) {
             if (isAfter(today, maxActualDate)) maxActualDate = today;
         }
-
         // Generate Final Points
         // Generate Final Points
         const points: SCurveDataPoint[] = [];

@@ -220,11 +220,20 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                             {isGroup ? (displayCost ? displayCost.toLocaleString() : '-') : (t.cost ? t.cost.toLocaleString() : '-')}
                         </div>
                     )}
-                    {visibleColumns.weight && (
-                        <div className="w-16 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
-                            {tWeight.toFixed(2)}%
-                        </div>
-                    )}
+                    <div className="w-16 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
+                        {(() => {
+                            if (t.type === 'group') {
+                                // Recursive sum for groups
+                                const { getAllDescendants } = require('./utils');
+                                const descendants = getAllDescendants(t.id, tasks) as Task[];
+                                const groupWeight = descendants
+                                    .filter(d => d.type !== 'group')
+                                    .reduce((sum, d) => sum + getTaskWeight(d), 0);
+                                return `${groupWeight.toFixed(2)}%`;
+                            }
+                            return `${tWeight.toFixed(2)}%`;
+                        })()}
+                    </div>
                     {visibleColumns.quantity && (
                         <div className="w-20 h-full flex items-center justify-start border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pl-2 truncate">
                             {isGroup ? (groupSummary?.count ? `${groupSummary.count} งาน` : '-') : (t.quantity || '-')}

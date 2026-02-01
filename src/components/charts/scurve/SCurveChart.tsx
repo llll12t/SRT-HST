@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Task } from '@/types/construction';
-import { format, parseISO, differenceInDays, addMonths, subMonths, isValid, isAfter } from 'date-fns';
+import { format, parseISO, differenceInDays, addMonths, subMonths, isValid, isAfter, addDays } from 'date-fns';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 
 // Types & Utils
@@ -61,9 +61,26 @@ export default function SCurveChart(props: SCurveChartProps) {
     }, []);
 
     // 1. Timeline Logic (Reused from Gantt)
+    // Determine the true range of the project (Plan vs Actual) to prevent clipping S-Curve data
+    const adjustedEndDate = useMemo(() => {
+        let maxDate = endDate ? parseDate(endDate) : new Date();
+        tasks.forEach(t => {
+            if (t.actualEndDate) {
+                const d = parseDate(t.actualEndDate);
+                if (isValid(d) && isAfter(d, maxDate)) maxDate = d;
+            }
+            if (t.planEndDate) {
+                const d = parseDate(t.planEndDate);
+                if (isValid(d) && isAfter(d, maxDate)) maxDate = d;
+            }
+        });
+        // Add a small buffer (e.g. 1 week) to ensure the curve finishes visually
+        return format(addDays(maxDate, 7), 'yyyy-MM-dd');
+    }, [tasks, endDate]);
+
     const { timeRange, timeline, config } = useGanttTimeline({
         startDate,
-        endDate,
+        endDate: adjustedEndDate,
         viewMode,
         containerWidth
     });
@@ -220,8 +237,8 @@ export default function SCurveChart(props: SCurveChartProps) {
         const paddingLeft = level * 16 + 20;
 
         return (
-            <div key={task.id} className="flex h-8 border-b border-gray-100 hover:bg-blue-50/20 group">
-                <div className="sticky left-0 z-40 bg-white group-hover:bg-blue-50/10 border-r border-gray-300 px-4 flex items-center"
+            <div key={task.id} className="flex h-8 hover:bg-blue-50/20 group">
+                <div className="sticky left-0 z-50 bg-white group-hover:bg-blue-50 border-r border-b border-gray-300 px-4 flex items-center"
                     style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: `${paddingLeft}px` }}>
 
                     <div className="truncate text-xs text-gray-700 flex-1">{task.name}</div>
@@ -262,9 +279,7 @@ export default function SCurveChart(props: SCurveChartProps) {
                                     className="w-full text-right bg-transparent border-b border-transparent hover:border-blue-300 focus:border-blue-500 outline-none transition-colors"
                                     defaultValue={task.quantity || ''}
                                     onBlur={(e) => {
-                                        const val = e.target.value; // Keep as string for quantity or robust parsing? Sample data has quantity as string or number? Types says string | number?
-                                        // Let's assume user inputs string for quantity usually, or number.
-                                        // Type definition: quantity?: string; in Task?
+                                        const val = e.target.value;
                                         if (val !== task.quantity) {
                                             onTaskUpdate(task.id, 'quantity', val);
                                         }
@@ -295,7 +310,7 @@ export default function SCurveChart(props: SCurveChartProps) {
                     {visibleColumns.actualDuration && <div className="w-[60px] text-right text-xs text-green-600 font-mono shrink-0 px-1">{task.actualStartDate && task.actualEndDate ? differenceInDays(parseDate(task.actualEndDate), parseDate(task.actualStartDate)) + 1 : '-'}d</div>}
                     {visibleColumns.progress && <div className="w-20 text-right text-xs text-gray-600 font-mono shrink-0 pr-4">{(task.progress || 0)}%</div>}
                 </div>
-                <div className="flex-1"></div>
+                <div className="flex-1 border-b border-gray-100"></div>
             </div>
         );
     };
@@ -380,8 +395,8 @@ export default function SCurveChart(props: SCurveChartProps) {
 
                                     return (
                                         <div key={category}>
-                                            <div className="flex bg-gray-50 border-b border-gray-200 h-10">
-                                                <div className="sticky left-0 z-50 bg-gray-100 border-r border-gray-300 px-4 flex items-center justify-between"
+                                            <div className="flex bg-gray-50 h-10">
+                                                <div className="sticky left-0 z-[60] bg-gray-100 border-r border-b border-gray-300 px-4 flex items-center justify-between"
                                                     style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
                                                     <div className="flex items-center gap-2">
                                                         <button
@@ -412,30 +427,29 @@ export default function SCurveChart(props: SCurveChartProps) {
                                                         return (
                                                             <div key={subcat}>
                                                                 {/* Level 2 Header */}
-                                                                <div className="flex bg-gray-50/50 h-8 border-b border-dashed border-gray-200">
-                                                                    <div className="sticky left-0 z-50 bg-gray-50 border-r border-gray-300 px-4 flex items-center"
+                                                                <div className="flex bg-gray-50/50 h-8">
+                                                                    <div className="sticky left-0 z-[60] bg-gray-50 border-r border-b border-gray-300 px-4 flex items-center"
                                                                         style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '36px' }}>
                                                                         {/* Colored Dot for Subcategory */}
                                                                         <div className="w-2 h-2 rounded-full mr-2" style={{ backgroundColor: subColor }} />
                                                                         <div className="text-xs font-semibold text-gray-600" style={{ color: subColor }}>{subcat}</div>
                                                                     </div>
-                                                                    <div className="flex-1"></div>
+                                                                    <div className="flex-1 border-b border-dashed border-gray-200"></div>
                                                                 </div>
 
-                                                                {/* Level 3 Subsubcategories */}
                                                                 {Object.entries(subData.subsubcategories).map(([subsub, tasks]) => {
                                                                     const subSubKey = `${category}::${subcat}::${subsub}`;
                                                                     const subSubColor = categoryColors[subSubKey] || subColor;
 
                                                                     return (
                                                                         <div key={subsub}>
-                                                                            <div className="flex bg-gray-50/30 h-8 border-b border-dashed border-gray-100">
-                                                                                <div className="sticky left-0 z-50 bg-gray-50 border-r border-gray-300 px-4 flex items-center"
+                                                                            <div className="flex bg-gray-50/30 h-8">
+                                                                                <div className="sticky left-0 z-[60] bg-gray-50 border-r border-b border-gray-300 px-4 flex items-center"
                                                                                     style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px`, paddingLeft: '56px' }}>
                                                                                     <div className="w-1.5 h-1.5 rounded-full mr-2" style={{ backgroundColor: subSubColor }}></div>
                                                                                     <div className="text-xs font-medium text-gray-500">{subsub}</div>
                                                                                 </div>
-                                                                                <div className="flex-1"></div>
+                                                                                <div className="flex-1 border-b border-dashed border-gray-100"></div>
                                                                             </div>
                                                                             {/* Tasks in SubSub */}
                                                                             {tasks.map(t => renderTaskRow(t, 3))}
