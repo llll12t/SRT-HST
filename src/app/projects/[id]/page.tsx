@@ -1186,6 +1186,7 @@ export default function ProjectDetailPage() {
                                 <tr>
                                     <th className="w-10 py-3 text-center"></th>
                                     <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wide border-r border-transparent">รายการงาน</th>
+                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wide w-32 border-r border-transparent">ผู้รับผิดชอบ</th>
                                     <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wide w-60 border-r border-transparent">ระยะเวลา</th>
                                     <th className="px-4 py-3 text-right text-xs font-bold text-gray-900 uppercase tracking-wide w-40 border-r border-transparent">ต้นทุน/ค่าใช้จ่าย</th>
                                     <th className="px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wide w-24 border-r border-transparent">ปริมาณ</th>
@@ -1260,6 +1261,7 @@ export default function ProjectDetailPage() {
                                                             )}
                                                         </div>
                                                     </td>
+                                                    <td className="px-4 py-4 text-center text-sm text-gray-300">-</td>
                                                     <td className="px-4 py-4 text-center text-xs text-gray-600 font-medium tabular-nums">
                                                         {catData.stats.minStartDate ? `${formatDateTH(catData.stats.minStartDate)} - ${formatDateTH(catData.stats.maxEndDate)}` : '-'}
                                                     </td>
@@ -1335,6 +1337,7 @@ export default function ProjectDetailPage() {
                                                                                 )}
                                                                             </div>
                                                                         </td>
+                                                                        <td className="px-4 py-2.5 text-center text-sm text-gray-300">-</td>
                                                                         <td className="px-4 py-2.5 text-center text-xs text-gray-600 tabular-nums">
                                                                             {subStats.minStartDate ? `${formatDateTH(subStats.minStartDate)} - ${formatDateTH(subStats.maxEndDate)}` : '-'}
                                                                         </td>
@@ -1408,6 +1411,7 @@ export default function ProjectDetailPage() {
                                                                                                     )}
                                                                                                 </div>
                                                                                             </td>
+                                                                                            <td className="px-4 py-2 text-center text-sm text-gray-300">-</td>
                                                                                             <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
                                                                                                 {subSubStats.minStartDate ? `${formatDateTH(subSubStats.minStartDate)} - ${formatDateTH(subSubStats.maxEndDate)}` : '-'}
                                                                                             </td>
@@ -1442,8 +1446,18 @@ export default function ProjectDetailPage() {
                                                                                                 <td className="px-4 py-2 pl-24 border-l-2 border-transparent hover:borderlue-200">
                                                                                                     <span className="text-sm text-gray-900 font-medium">{task.name}</span>
                                                                                                 </td>
+                                                                                                <td className="px-4 py-2 text-left text-xs text-gray-600 border-l border-transparent truncate max-w-[120px]">
+                                                                                                    {task.responsible || '-'}
+                                                                                                </td>
                                                                                                 <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
-                                                                                                    {formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}
+                                                                                                    <div className="flex flex-col gap-0.5">
+                                                                                                        <span>{formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}</span>
+                                                                                                        {task.actualStartDate && (
+                                                                                                            <span className="text-emerald-600 font-medium">
+                                                                                                                {formatDateTH(task.actualStartDate)} - {task.actualEndDate ? formatDateTH(task.actualEndDate) : '...'}
+                                                                                                            </span>
+                                                                                                        )}
+                                                                                                    </div>
                                                                                                 </td>
                                                                                                 <td className="px-4 py-2 text-right text-xs text-gray-900 tabular-nums">
                                                                                                     {(task.cost || 0).toLocaleString()}
@@ -1493,8 +1507,18 @@ export default function ProjectDetailPage() {
                                                                                     <td className="px-4 py-2 pl-16 border-l-2 border-transparent hover:border-amber-200">
                                                                                         <span className="text-sm text-gray-900 font-medium">{task.name}</span>
                                                                                     </td>
+                                                                                    <td className="px-4 py-2 text-left text-xs text-gray-600 border-l border-transparent truncate max-w-[120px]">
+                                                                                        {task.responsible || '-'}
+                                                                                    </td>
                                                                                     <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
-                                                                                        {formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}
+                                                                                        <div className="flex flex-col gap-0.5">
+                                                                                            <span>{formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}</span>
+                                                                                            {task.actualStartDate && (
+                                                                                                <span className="text-emerald-600 font-medium">
+                                                                                                    {formatDateTH(task.actualStartDate)} - {task.actualEndDate ? formatDateTH(task.actualEndDate) : '...'}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
                                                                                     </td>
                                                                                     <td className="px-4 py-2 text-right text-xs text-gray-900 tabular-nums">
                                                                                         {(task.cost || 0).toLocaleString()}
@@ -1546,8 +1570,18 @@ export default function ProjectDetailPage() {
                                                                 <td className="px-4 py-2 pl-12 border-l-2 border-transparent hover:borderlue-200">
                                                                     <span className="text-sm text-gray-900 font-medium">{task.name}</span>
                                                                 </td>
+                                                                <td className="px-4 py-2 text-left text-xs text-gray-600 border-l border-transparent truncate max-w-[120px]">
+                                                                    {task.responsible || '-'}
+                                                                </td>
                                                                 <td className="px-4 py-2 text-center text-xs text-gray-600 tabular-nums">
-                                                                    {formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}
+                                                                    <div className="flex flex-col gap-0.5">
+                                                                        <span>{formatDateTH(task.planStartDate)} - {formatDateTH(task.planEndDate)}</span>
+                                                                        {task.actualStartDate && (
+                                                                            <span className="text-emerald-600 font-medium">
+                                                                                {formatDateTH(task.actualStartDate)} - {task.actualEndDate ? formatDateTH(task.actualEndDate) : '...'}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </td>
                                                                 <td className="px-4 py-2 text-right text-xs text-gray-900 tabular-nums">{task.cost?.toLocaleString()}</td>
                                                                 <td className="px-4 py-2 text-center text-xs text-gray-500">{task.quantity || '-'}</td>

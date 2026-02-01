@@ -479,6 +479,18 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
     const handleTaskUpdate = async (taskId: string, updates: Partial<Task>) => {
         try {
+            // Auto status update based on progress
+            if (typeof updates.progress === 'number') {
+                if (updates.progress === 100) {
+                    updates.status = 'completed';
+                    // Optional: Set actualEndDate if missing? Leaving out for now to minimize side effects.
+                } else if (updates.progress > 0 && updates.progress < 100) {
+                    updates.status = 'in-progress';
+                } else if (updates.progress === 0) {
+                    updates.status = 'not-started';
+                }
+            }
+
             setUpdatingTaskIds(prev => { const newSet = new Set(prev); newSet.add(taskId); return newSet; });
             setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
             const { updateTask } = await import('@/lib/firestore');
