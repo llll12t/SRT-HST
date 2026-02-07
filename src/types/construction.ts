@@ -26,6 +26,7 @@ export interface Task {
     name: string;
     description?: string;
     responsible?: string;
+    assignedEmployeeIds?: string[];
     color?: string; // Custom color for the task/group bar
     // weight removed
     cost?: number; // Cost in Baht
@@ -124,6 +125,21 @@ export interface Member {
     department?: string;
     username?: string;
     avatar?: string;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+// Employee (for task assignment, not login permission)
+export interface Employee {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    position?: string;
+    department?: string;
+    employeeCode?: string;
+    avatarBase64?: string;
+    active?: boolean;
     createdAt?: string;
     updatedAt?: string;
 }

@@ -14,7 +14,7 @@ import {
     writeBatch
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Project, Task, WeeklyLog, Member } from '@/types/construction';
+import { Project, Task, WeeklyLog, Member, Employee } from '@/types/construction';
 import { differenceInDays, parseISO } from 'date-fns';
 
 // Helper to remove undefined values for Firestore
@@ -516,7 +516,8 @@ export async function seedSampleData(): Promise<void> {
 
 export async function getMembers(): Promise<Member[]> {
     const membersRef = collection(db, 'members');
-    const q = query(membersRef, orderBy('createdAt', 'desc'));
+    // Remove orderBy to ensure we get ALL members, even those manually added without createdAt
+    const q = query(membersRef);
     const snapshot = await getDocs(q);
 
     return snapshot.docs.map(doc => ({
@@ -557,6 +558,54 @@ export async function updateMember(memberId: string, data: Partial<Member>): Pro
 
 export async function deleteMember(memberId: string): Promise<void> {
     const docRef = doc(db, 'members', memberId);
+    await deleteDoc(docRef);
+}
+
+// ==================== EMPLOYEES ====================
+
+export async function getEmployees(): Promise<Employee[]> {
+    const employeesRef = collection(db, 'employees');
+    const q = query(employeesRef);
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    })) as Employee[];
+}
+
+export async function getEmployee(employeeId: string): Promise<Employee | null> {
+    const docRef = doc(db, 'employees', employeeId);
+    const snapshot = await getDoc(docRef);
+
+    if (!snapshot.exists()) return null;
+
+    return {
+        id: snapshot.id,
+        ...snapshot.data()
+    } as Employee;
+}
+
+export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+    const employeesRef = collection(db, 'employees');
+    const docRef = await addDoc(employeesRef, {
+        ...removeUndefined(employee),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+    });
+    return docRef.id;
+}
+
+export async function updateEmployee(employeeId: string, data: Partial<Employee>): Promise<void> {
+    const docRef = doc(db, 'employees', employeeId);
+    await updateDoc(docRef, {
+        ...removeUndefined(data),
+        updatedAt: serverTimestamp()
+    });
+}
+
+export async function deleteEmployee(employeeId: string): Promise<void> {
+    const docRef = doc(db, 'employees', employeeId);
     await deleteDoc(docRef);
 }
 
