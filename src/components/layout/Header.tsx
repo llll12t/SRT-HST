@@ -40,7 +40,7 @@ export default function Header() {
     };
 
     return (
-        <header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between pl-16 lg:pl-6 pr-6 sticky top-0 z-30">
+        <header data-layout-header className="h-14 bg-white border-b border-gray-200 flex items-center justify-between pl-16 lg:pl-6 pr-6">
             {/* Left Side: Empty or Breadcrumbs if needed later */}
             <div className="flex-1"></div>
 

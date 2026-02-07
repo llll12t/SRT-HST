@@ -125,3 +125,21 @@ textarea:focus {
   background-color: #f1f5f9;
   color: #475569;
 }
+
+/* Hide app chrome when Gantt is in fullscreen mode */
+body.gantt-fullscreen [data-layout-sidebar],
+body.gantt-fullscreen [data-layout-header] {
+  display: none !important;
+}
+
+body.gantt-fullscreen [data-layout-content] {
+  margin-left: 0 !important;
+}
+
+body.gantt-fullscreen [data-layout-main] {
+  padding: 0 !important;
+}
+
+body.gantt-fullscreen .gantt-page-header {
+  display: none !important;
+}

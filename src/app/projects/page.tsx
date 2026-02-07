@@ -45,19 +45,6 @@ export default function ProjectsPage() {
     const [saving, setSaving] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null); // Used for dropdown menu
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null); // Used for delete confirmation modal
-    const [activeStatusDropdown, setActiveStatusDropdown] = useState<string | null>(null);
-
-    // Handle status change
-    const handleStatusChange = async (projectId: string, newStatus: Project['status']) => {
-        try {
-            await updateProject(projectId, { status: newStatus });
-            setActiveStatusDropdown(null);
-            fetchProjects(); // Refresh data
-        } catch (error) {
-            console.error('Error updating status:', error);
-            alert('เกิดข้อผิดพลาดในการอัปเดตสถานะ');
-        }
-    };
 
     // Form state
     const [formData, setFormData] = useState({
@@ -460,39 +447,11 @@ export default function ProjectsPage() {
 
                                     {/* Footer */}
                                     <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                        <div className="flex items-center gap-2 relative">
-                                            <button
-                                                onClick={() => setActiveStatusDropdown(activeStatusDropdown === project.id ? null : project.id)}
-                                                className={`px-2.5 py-0.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 hover:brightness-95 transition-all cursor-pointer ${statusConfig.class}`}
-                                            >
+                                        <div className="flex items-center gap-2">
+                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${statusConfig.class}`}>
                                                 {statusConfig.icon}
                                                 {statusConfig.label}
-                                            </button>
-
-                                            {/* Status Dropdown */}
-                                            {activeStatusDropdown === project.id && (
-                                                <div className="absolute left-0 bottom-full mb-2 w-40 bg-white border border-gray-200 rounded-lg shadow-xl z-20 py-1 overflow-hidden animate-in fade-in zoom-in-95 duration-200 origin-bottom-left">
-                                                    {(['planning', 'in-progress', 'completed', 'on-hold'] as const).map((s) => {
-                                                        const cfg = getStatusConfig(s);
-                                                        return (
-                                                            <button
-                                                                key={s}
-                                                                onClick={() => handleStatusChange(project.id, s as any)}
-                                                                className={`w-full px-3 py-2 text-left text-xs font-medium hover:bg-gray-50 flex items-center gap-2
-                                                                    ${project.status === s ? 'bg-blue-50 text-blue-700' : 'text-gray-700'}
-                                                                `}
-                                                            >
-                                                                <div className={`w-2 h-2 rounded-full ${s === 'completed' ? 'bg-green-500' :
-                                                                    s === 'in-progress' ? 'bg-blue-500' :
-                                                                        s === 'on-hold' ? 'bg-amber-500' :
-                                                                            'bg-gray-400'
-                                                                    }`} />
-                                                                {cfg.label}
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
+                                            </span>
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <div className="flex items-center gap-2">

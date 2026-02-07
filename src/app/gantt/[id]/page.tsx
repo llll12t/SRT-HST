@@ -1,7 +1,7 @@
-'use client';
+﻿'use client';
 
 import React, { use } from 'react';
-import GanttClient from '@/components/gantt/GanttClient';
+import GanttPageClient from '@/features/gantt/presentation/routes/GanttPageClient';
 
 interface PageProps {
     params: Promise<{
@@ -11,5 +11,5 @@ interface PageProps {
 
 export default function ProjectGanttPage({ params }: PageProps) {
     const { id } = use(params);
-    return <GanttClient preSelectedProjectId={id} />;
+    return <GanttPageClient preSelectedProjectId={id} />;
 }

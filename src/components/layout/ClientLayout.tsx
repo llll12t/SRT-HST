@@ -17,12 +17,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     return (
         <div className="flex min-h-screen">
             <Sidebar />
-            <div className={clsx(
+            <div data-layout-content className={clsx(
                 'flex-1 transition-all duration-200',
                 collapsed ? 'lg:ml-16' : 'lg:ml-56'
             )}>
                 <Header />
-                <main className="p-6">
+                <main data-layout-main className="p-6">
                     {children}
                 </main>
             </div>

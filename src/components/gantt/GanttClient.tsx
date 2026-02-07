@@ -1,30 +1,37 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import GanttChart from '@/components/charts/gantt/GanttChart';
-import { Calendar, Loader2, FolderKanban, Plus, TrendingUp, ArrowLeft } from 'lucide-react';
+import { Calendar, Loader2, FolderKanban, Plus, FileUp, TrendingUp } from 'lucide-react';
 import Link from 'next/link';
-import { Project, Task } from '@/types/construction';
-import { getProjects, getTasks, updateTask, createTask } from '@/lib/firestore';
-import { format, parseISO, addDays, differenceInDays } from 'date-fns';
+import { Project, Task, Employee } from '@/types/construction';
+import { getProjects, getTasks, updateTask, createTask, getEmployees } from '@/lib/firestore'; // Removed addTask, unused
+import { format, differenceInDays, parseISO, addDays } from 'date-fns';
 import AddTaskModal from '@/components/gantt/modals/AddTaskModal';
 import ProgressUpdateModal from '@/components/gantt/modals/ProgressUpdateModal';
 
-// This component handles the logic for both the main gantt page and individual project gantt pages
-export default function GanttClient({ preSelectedProjectId }: { preSelectedProjectId?: string }) {
-    const router = useRouter();
-    const searchParams = useSearchParams();
+const formatDateTH = (dateStr: string | Date | undefined | null) => {
+    if (!dateStr) return '-';
+    const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+    if (isNaN(date.getTime())) return '-';
+    const day = date.getDate().toString().padStart(2, '0');
+    const month = (date.getMonth() + 1).toString().padStart(2, '0');
+    const yearBE = (date.getFullYear() + 543).toString().slice(-2);
+    return `${day}/${month}/${yearBE}`;
+};
 
-    // Priority: Prop (from dynamic route) > Query Param > Default (empty)
-    const paramId = searchParams.get('projectId') || searchParams.get('project');
-    const effectiveProjectId = preSelectedProjectId || paramId || '';
+export default function GanttClient({ preSelectedProjectId }: { preSelectedProjectId?: string } = {}) {
+    const searchParams = useSearchParams();
+    const projectParam = preSelectedProjectId || searchParams.get('project') || searchParams.get('projectId');
 
     const [projects, setProjects] = useState<Project[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedProjectId, setSelectedProjectId] = useState<string>(effectiveProjectId);
+    const [selectedProjectId, setSelectedProjectId] = useState<string>('');
     const [importing, setImporting] = useState(false);
+    const importInputRef = React.useRef<HTMLInputElement | null>(null);
 
     // Modal States
     const [showAddTaskModal, setShowAddTaskModal] = useState(false);
@@ -36,22 +43,17 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
     // Track updating tasks for loading state
     const [updatingTaskIds, setUpdatingTaskIds] = useState<Set<string>>(new Set());
 
-    // Track category order saving
-    const [isSavingOrder, setIsSavingOrder] = useState(false);
-
     // Get unique categories for AddTaskModal
     const existingCategories = [...new Set(tasks.map(t => t.category))].filter(Boolean);
 
-    // Fetch Projects
+    // Define fetch functions FIRST (useCallback)
     const fetchProjects = useCallback(async () => {
         try {
             setLoading(true);
             const projectsData = await getProjects();
             setProjects(projectsData);
 
-            // If we don't have a specific ID yet, default to the first (latest) project
-            if (projectsData.length > 0 && !effectiveProjectId) {
-                // IMPORTANT: If we are purely client-side without URL param, set state but don't force URL push unless needed
+            if (projectsData.length > 0 && !projectParam) {
                 setSelectedProjectId(projectsData[0].id);
             }
         } catch (error) {
@@ -59,9 +61,8 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
         } finally {
             setLoading(false);
         }
-    }, [effectiveProjectId]);
+    }, [projectParam]);
 
-    // Fetch Tasks
     const fetchTasks = useCallback(async () => {
         try {
             if (!selectedProjectId) return;
@@ -72,32 +73,36 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
         }
     }, [selectedProjectId]);
 
-    // Initial Load
+    // THEN use them in useEffect
     useEffect(() => {
         fetchProjects();
     }, [fetchProjects]);
 
-    // When ID changes (either from props/url or selection), fetch tasks
+    useEffect(() => {
+        if (projectParam && projects.length > 0) {
+            setSelectedProjectId(projectParam);
+        }
+    }, [projectParam, projects]);
+
     useEffect(() => {
         if (selectedProjectId) {
             fetchTasks();
         }
     }, [selectedProjectId, fetchTasks]);
 
-    // Update internal state if upstream prop changes (e.g. navigation)
     useEffect(() => {
-        if (effectiveProjectId) {
-            setSelectedProjectId(effectiveProjectId);
-        }
-    }, [effectiveProjectId]);
+        const fetchEmployees = async () => {
+            try {
+                const data = await getEmployees();
+                setEmployees(data);
+            } catch (error) {
+                console.error('Error fetching employees:', error);
+            }
+        };
+        fetchEmployees();
+    }, []);
 
-    const handleProjectChange = (newId: string) => {
-        setSelectedProjectId(newId);
-        // Navigate to the clean URL for this project
-        router.push(`/gantt/${newId}`);
-    };
-
-    // --- Handlers from original file ---
+    // Handlers
     const openProgressModal = (taskId: string) => {
         const task = tasks.find(t => t.id === taskId);
         if (task) {
@@ -110,13 +115,16 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
             const task = tasks.find(t => t.id === taskId);
             if (!task) return;
 
+            // Handle "เริ่มงาน" (-1) special case
             const isStartingWork = newProgress === -1;
             const actualProgress = isStartingWork ? 0 : newProgress;
 
+            // Determine status
             let newStatus: Task['status'] = 'not-started';
             if (actualProgress === 100) newStatus = 'completed';
             else if (actualProgress > 0) newStatus = 'in-progress';
             else if (isStartingWork) newStatus = 'in-progress';
+            // If 0 and not starting work, default to 'not-started' (Reset)
 
             const updateData: Partial<Task> = {
                 progress: actualProgress,
@@ -124,8 +132,11 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                 status: newStatus
             };
 
-            if (reason) updateData.remarks = reason;
+            if (reason) {
+                updateData.remarks = reason;
+            }
 
+            // Handle actualStartDate
             if (isStartingWork) {
                 updateData.actualStartDate = updateDate;
             } else if (actualProgress === 0) {
@@ -142,9 +153,11 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                 }
             }
 
+            // Set actualEndDate if completing work
             if (actualProgress === 100) {
                 updateData.actualEndDate = updateDate;
             } else {
+                // Clear actualEndDate if not complete
                 if (task.actualEndDate) updateData.actualEndDate = '';
             }
 
@@ -152,21 +165,25 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
             fetchTasks();
         } catch (error) {
             console.error('Error updating progress:', error);
-            alert('เกิดข้อผิดพลาดในการอัปเดท');
+            alert('เกิดข้อผิดพลาดในการอัปเดต');
         }
     };
 
     const handleAddSubTask = (parentId: string) => {
         const parent = tasks.find(t => t.id === parentId);
         if (parent) {
+            // Find sibling tasks (children of the same parent)
             const siblingTasks = tasks.filter(t => t.parentTaskId === parentId && t.type !== 'group');
+
             let defaultStartDate = format(new Date(), 'yyyy-MM-dd');
 
             if (siblingTasks.length > 0) {
+                // Find the latest end date among siblings
                 let maxEndDate = siblingTasks[0].planEndDate;
                 siblingTasks.forEach(t => {
                     if (t.planEndDate > maxEndDate) maxEndDate = t.planEndDate;
                 });
+                // Start the day after the last sibling ends
                 try {
                     const nextDay = addDays(parseISO(maxEndDate), 1);
                     defaultStartDate = format(nextDay, 'yyyy-MM-dd');
@@ -174,6 +191,7 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                     defaultStartDate = maxEndDate;
                 }
             } else if (parent.planStartDate) {
+                // If no siblings, use parent's start date
                 defaultStartDate = parent.planStartDate;
             }
 
@@ -205,6 +223,8 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
         try {
             const planDuration = Math.max(1, parseInt(newTaskData.duration) || 1);
+
+            // Calculate storage end date
             const storageEndDate = (() => {
                 try {
                     const start = parseISO(newTaskData.planStartDate);
@@ -214,13 +234,21 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
             })();
 
             const currentMaxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : 0;
+
+            // Determine predecessor
             let predecessorId: string | undefined;
             if (autoLink) {
                 if (newTaskData.parentTaskId) {
+                    // If subtask, link to the last sibling
                     const siblings = tasks.filter(t => t.parentTaskId === newTaskData.parentTaskId);
-                    if (siblings.length > 0) predecessorId = siblings[siblings.length - 1].id;
+                    if (siblings.length > 0) {
+                        predecessorId = siblings[siblings.length - 1].id;
+                    }
                 } else {
-                    if (tasks.length > 0) predecessorId = tasks[tasks.length - 1].id;
+                    // If root task, link to the absolute last task in the project
+                    if (tasks.length > 0) {
+                        predecessorId = tasks[tasks.length - 1].id;
+                    }
                 }
             }
 
@@ -245,6 +273,7 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                 predecessors: predecessorId ? [predecessorId] : undefined
             });
 
+            // Refresh tasks
             fetchTasks();
             setShowAddTaskModal(false);
             setAddTaskInitialData(undefined);
@@ -280,25 +309,28 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                 reader.readAsText(file, 'UTF-8');
             });
 
+            // Use robust CSV parser
             const { parseCSV } = await import('@/lib/csv-utils');
             const data = parseCSV(text);
+
+            console.log('ðŸ“Š CSV Import - Total rows:', data.length);
 
             if (data.length === 0) throw new Error('File is empty or invalid');
 
             const { batchCreateTasks, getNewTaskId } = await import('@/lib/firestore');
+
             const idMap: Record<string, string> = {};
             let activeGroup: { id: string, category: string } | null = null;
             let count = 0;
             const currentMaxOrder = tasks.length > 0 ? Math.max(...tasks.map(t => t.order || 0)) : 0;
+
             let lastTaskId: string | null = tasks.length > 0 ? tasks[tasks.length - 1].id : null;
             const tasksToCreate: any[] = [];
 
+            // 1. Prepare all task objects first
             for (const row of data) {
                 const name = row['Task Name'] || row['Task'] || row['Name'] || row['name'];
                 if (!name) continue;
-
-                // Filter out instruction row if present (Thai headers in data row)
-                if (name === 'ชื่องาน' || row['Category'] === 'หมวดหมู่') continue;
 
                 const category = row['Category'] || 'Imported';
                 const subcategory = row['Subcategory'] || row['Sub Category'] || '';
@@ -306,95 +338,44 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
                 const parseDate = (val: string): string | null => {
                     if (!val || val === '-' || val.trim() === '') return null;
-                    const cleaned = String(val).trim();
-                    // dd/MM/yyyy or dd-MM-yyyy
-                    if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{4}$/.test(cleaned)) {
-                        const [d, m, y] = cleaned.split(/[\/-]/);
-                        return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-                    }
-                    // dd/MM/yy or dd-MM-yy
-                    if (/^\d{1,2}[\/-]\d{1,2}[\/-]\d{2}$/.test(cleaned)) {
-                        const [d, m, y] = cleaned.split(/[\/-]/);
-                        const fullYear = parseInt(y) < 50 ? `20${y}` : `19${y}`;
-                        return `${fullYear}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-                    }
-                    // yyyy-MM-dd (Auto fallback)
+                    const cleaned = val.trim();
                     if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) return cleaned;
-
-                    // Fallback to Date parse for other standard formats
+                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(cleaned)) {
+                        const [day, month, year] = cleaned.split('/');
+                        return `${year}-${month}-${day}`;
+                    }
+                    if (/^\d{2}\/\d{2}\/\d{2}$/.test(cleaned)) {
+                        const [day, month, year] = cleaned.split('/');
+                        const fullYear = parseInt(year) < 50 ? `20${year}` : `19${year}`;
+                        return `${fullYear}-${month}-${day}`;
+                    }
                     const d = new Date(cleaned);
                     if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-
                     return null;
                 };
 
-                const planStartRaw = row['Plan Start'] || row['PlanStartDate'] || row['Start Date'] || row['วันเริ่มต้น'] || row['วันเริ่ม'] || row['Start'];
-                const planEndRaw = row['Plan End'] || row['PlanEndDate'] || row['End Date'] || row['วันสิ้นสุด'] || row['วันจบ'] || row['End'];
-                const durationRaw = row['Duration'] || row['Duration (Days)'] || row['PlanDuration'] || row['Days'] || row['ระยะเวลา'] || row['จำนวนวัน'] || '0';
+                const duration = parseInt(row['Duration'] || row['Duration (Days)']) || 1;
+                let planStart = parseDate(row['Plan Start'] || row['Start']);
+                if (!planStart) planStart = format(new Date(), 'yyyy-MM-dd');
 
-                let planStart = parseDate(planStartRaw);
-                if (!planStart && !planEndRaw) planStart = format(new Date(), 'yyyy-MM-dd'); // Default only if totally empty? Or keep strict? Keeping existing behavior of default today if missing.
-
-                let planEnd = parseDate(planEndRaw);
-
-                // Flexible duration parsing
-                const durationVal = Math.ceil(parseFloat(String(durationRaw).replace(/,/g, ''))) || 0;
-                let duration = Math.max(1, durationVal);
-
-                // Auto calculate Plan End if missing
-                if (planStart && duration > 0 && !planEnd) {
-                    try {
-                        const startDate = parseISO(planStart);
-                        planEnd = format(addDays(startDate, duration - 1), 'yyyy-MM-dd');
-                    } catch (e) {
-                        console.error('Error calculating end date:', e);
-                    }
-                }
-
-                // If Plan End exists but Duration is different (priority check), usually we trust dates over duration for consistency if both exist,
-                // BUT if we just calculated Plan End, they are consistent.
-                // If the user provided both, we might want to recalc duration to match dates or vice versa.
-                // Standard practice: Dates rule. Recalc duration from dates if both dates exist.
-                if (planStart && planEnd) {
-                    try {
-                        const start = parseISO(planStart);
-                        const end = parseISO(planEnd);
-                        const diff = differenceInDays(end, start) + 1;
-                        duration = diff > 0 ? diff : 1;
-                    } catch { }
-                }
-
-                // Parse Numbers safely
-                const cost = parseFloat((row['Cost'] || '0').toString().replace(/,/g, '')) || 0;
-                const progress = parseFloat((row['Progress'] || row['Progress (%)'] || '0').toString().replace(/%/g, '')) || 0;
-
-                // Status Mapping
-                let status = 'not-started';
-                const statusRaw = (row['Status'] || '').toLowerCase().trim();
-                if (statusRaw === 'in-progress' || statusRaw === 'in progress' || statusRaw === 'กำลังดำเนินการ') status = 'in-progress';
-                else if (statusRaw === 'completed' || statusRaw === 'เสร็จสิ้น' || statusRaw === 'done') status = 'completed';
-                else if (statusRaw === 'delayed' || statusRaw === 'ล่าช้า' || statusRaw === 'on-hold') status = 'delayed'; // Map on-hold/delayed based on type? Types says 'delayed', Project says 'on-hold'. Task has 'delayed'.
-                else if (progress === 100) status = 'completed';
-                else if (progress > 0) status = 'in-progress';
-
-                // Actual Dates
-                const actualStartDate = parseDate(row['Actual Start'] || row['ActualStartDate']);
-                const actualEndDate = parseDate(row['Actual End'] || row['ActualEndDate']);
-                let actualDuration: number | undefined = undefined;
-                if (actualStartDate && actualEndDate) {
-                    actualDuration = differenceInDays(parseISO(actualEndDate), parseISO(actualStartDate)) + 1;
-                }
+                const startDateParams = parseISO(planStart);
+                const endDateParams = addDays(startDateParams, duration - 1);
+                const planEnd = format(endDateParams, 'yyyy-MM-dd');
 
                 const type = (row['Type']?.toLowerCase() === 'group' ? 'group' : 'task');
                 const newTaskId = getNewTaskId();
+
                 let parentId: string | undefined = undefined;
 
                 if (type === 'group') {
                     parentId = undefined;
                     activeGroup = { id: newTaskId, category: category };
                 } else {
-                    if (activeGroup && activeGroup.category === category) parentId = activeGroup.id;
-                    else activeGroup = null;
+                    if (activeGroup && activeGroup.category === category) {
+                        parentId = activeGroup.id;
+                    } else {
+                        activeGroup = null;
+                    }
                 }
 
                 const predecessors = (lastTaskId && type !== 'group') ? [lastTaskId] : undefined;
@@ -408,14 +389,11 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                     planStartDate: planStart,
                     planEndDate: planEnd,
                     planDuration: duration,
-                    cost: cost,
+                    cost: parseFloat(row['Cost'] || '0') || 0,
                     quantity: row['Quantity'] || undefined,
                     responsible: row['Responsible'] || undefined,
-                    progress: progress,
-                    status: status as any,
-                    actualStartDate: actualStartDate || undefined,
-                    actualEndDate: actualEndDate || undefined,
-                    actualDuration: actualDuration,
+                    progress: parseFloat(row['Progress'] || row['Progress (%)'] || '0') || 0,
+                    status: 'not-started',
                     order: currentMaxOrder + count + 1,
                     type: type,
                     parentTaskId: parentId,
@@ -436,6 +414,7 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
             alert(`นำเข้าข้อมูลสำเร็จ ${count} รายการ`);
             fetchTasks();
+
         } catch (error) {
             console.error('Import error:', error);
             alert('เกิดข้อผิดพลาดในการนำเข้าไฟล์: ' + (error instanceof Error ? error.message : 'Unknown error'));
@@ -447,27 +426,68 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
     const handleExport = () => {
         if (tasks.length === 0) return;
-        const headers = ['Category', 'Subcategory', 'SubSubcategory', 'Type', 'Task Name', 'Plan Start', 'Plan End', 'Duration (Days)', 'Cost', 'Quantity', 'Responsible', 'Progress (%)', 'Status', 'Actual Start', 'Actual End'];
 
-        const rows = tasks.map(task => [
-            `"${(task.category || '').replace(/"/g, '""')}"`,
-            `"${(task.subcategory || '').replace(/"/g, '""')}"`,
-            `"${(task.subsubcategory || '').replace(/"/g, '""')}"`,
-            task.type || 'task',
-            `"${(task.name || '').replace(/"/g, '""')}"`,
-            task.planStartDate,
-            task.planEndDate,
-            task.planDuration || 0,
-            task.cost || 0,
-            `"${(task.quantity || '').replace(/"/g, '""')}"`,
-            `"${(task.responsible || '').replace(/"/g, '""')}"`,
-            task.progress || 0,
-            task.status || 'not-started',
-            task.actualStartDate || '-',
-            task.actualEndDate || '-'
-        ].join(','));
+        const headers = [
+            'Category',
+            'Subcategory',
+            'SubSubcategory',
+            'Type',
+            'Task Name',
+            'Plan Start',
+            'Plan End',
+            'Duration (Days)',
+            'Cost',
+            'Quantity',
+            'Responsible',
+            'Progress (%)',
+            'Status',
+            'Actual Start',
+            'Actual End'
+        ];
 
-        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+        const instructionRow = [
+            'หมวดหมู่',
+            'หมวดหมู่ย่อย',
+            'หมวดหมู่ย่อยระดับ 3',
+            'ประเภท (task/group)',
+            'ชื่องาน',
+            'วันเริ่มต้น',
+            'วันสิ้นสุด',
+            'ระยะเวลา (วัน)',
+            'ค่าใช้จ่าย',
+            'จำนวน',
+            'ผู้รับผิดชอบ',
+            'ความคืบหน้า',
+            'สถานะ',
+            'วันเริ่มจริง',
+            'วันสิ้นสุดจริง'
+        ];
+
+        const rows = tasks.map(task => {
+            return [
+                `"${(task.category || '').replace(/"/g, '""')}"`,
+                `"${(task.subcategory || '').replace(/"/g, '""')}"`,
+                `"${(task.subsubcategory || '').replace(/"/g, '""')}"`,
+                task.type || 'task',
+                `"${(task.name || '').replace(/"/g, '""')}"`,
+                task.planStartDate,
+                task.planEndDate,
+                task.planDuration || 0,
+                task.cost || 0,
+                `"${(task.quantity || '').replace(/"/g, '""')}"`,
+                `"${(task.responsible || '').replace(/"/g, '""')}"`,
+                task.progress || 0,
+                task.status || 'not-started',
+                task.actualStartDate || '-',
+                task.actualEndDate || '-'
+            ].join(',');
+        });
+
+        const csvContent = '\uFEFF' + [
+            headers.join(','),
+            instructionRow.map(cell => `"${cell}"`).join(','),
+            ...rows
+        ].join('\n');
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
@@ -479,83 +499,27 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
     const handleTaskUpdate = async (taskId: string, updates: Partial<Task>) => {
         try {
-            // Auto status update based on progress
-            if (typeof updates.progress === 'number') {
-                if (updates.progress === 100) {
-                    updates.status = 'completed';
-                    // Optional: Set actualEndDate if missing? Leaving out for now to minimize side effects.
-                } else if (updates.progress > 0 && updates.progress < 100) {
-                    updates.status = 'in-progress';
-                } else if (updates.progress === 0) {
-                    updates.status = 'not-started';
-                }
-            }
+            setUpdatingTaskIds(prev => {
+                const newSet = new Set(prev);
+                newSet.add(taskId);
+                return newSet;
+            });
 
-            setUpdatingTaskIds(prev => { const newSet = new Set(prev); newSet.add(taskId); return newSet; });
             setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
+
             const { updateTask } = await import('@/lib/firestore');
             await updateTask(taskId, updates);
-            fetchTasks(); // Optional: Sync fully
+
+            fetchTasks();
         } catch (error) {
             console.error('Error updating task:', error);
             fetchTasks();
         } finally {
-            setUpdatingTaskIds(prev => { const newSet = new Set(prev); newSet.delete(taskId); return newSet; });
-        }
-    };
-
-    const handleCategoryOrderChange = async (newOrder: string[]) => {
-        if (!selectedProjectId) return;
-
-        setIsSavingOrder(true);
-
-        // Optimistic update local project state
-        setProjects(prev => prev.map(p =>
-            p.id === selectedProjectId
-                ? { ...p, categoryOrder: newOrder }
-                : p
-        ));
-
-        try {
-            const { updateProject } = await import('@/lib/firestore');
-            await updateProject(selectedProjectId, { categoryOrder: newOrder });
-        } catch (error) {
-            console.error('Failed to update category order', error);
-            fetchProjects(); // Revert
-            alert('บันทึกการจัดเรียงหมวดหมู่ล้มเหลว');
-        } finally {
-            setIsSavingOrder(false);
-        }
-    };
-
-    const handleSubcategoryOrderChange = async (categoryName: string, newOrder: string[]) => {
-        if (!selectedProjectId || !selectedProject) return;
-
-        setIsSavingOrder(true);
-
-        // Build updated subcategoryOrder
-        const currentSubcategoryOrder = selectedProject.subcategoryOrder || {};
-        const updatedSubcategoryOrder = {
-            ...currentSubcategoryOrder,
-            [categoryName]: newOrder
-        };
-
-        // Optimistic update local project state
-        setProjects(prev => prev.map(p =>
-            p.id === selectedProjectId
-                ? { ...p, subcategoryOrder: updatedSubcategoryOrder }
-                : p
-        ));
-
-        try {
-            const { updateProject } = await import('@/lib/firestore');
-            await updateProject(selectedProjectId, { subcategoryOrder: updatedSubcategoryOrder });
-        } catch (error) {
-            console.error('Failed to update subcategory order', error);
-            fetchProjects(); // Revert
-            alert('บันทึกการจัดเรียงหมวดหมู่ย่อยล้มเหลว');
-        } finally {
-            setIsSavingOrder(false);
+            setUpdatingTaskIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(taskId);
+                return newSet;
+            });
         }
     };
 
@@ -576,11 +540,18 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                         <Calendar className="w-6 h-6 text-blue-600" />
                         Gantt Chart
                     </h1>
+                    <p className="text-gray-500 text-sm mt-0.5">แผนงานและกำหนดการโครงการ</p>
                 </div>
+
                 <div className="bg-white rounded border border-gray-300 p-12 text-center shadow-none">
                     <FolderKanban className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-500 mb-4 text-sm">ไม่พบโครงการ กรุณาสร้างโครงการก่อน</p>
-                    <Link href="/projects" className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-sm hover:bg-blue-700 inline-block transition-colors">ไปหน้าโครงการ</Link>
+                    <Link
+                        href="/projects"
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-sm hover:bg-blue-700 inline-block transition-colors"
+                    >
+                        ไปหน้าโครงการ
+                    </Link>
                 </div>
             </div>
         );
@@ -588,61 +559,80 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
 
     return (
         <div className="space-y-4 font-sans">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                <div className="flex items-center gap-4">
-                    <Link href="/projects" className="p-2 -ml-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors" title="กลับไปหน้ารวมโครงการ">
-                        <ArrowLeft className="w-5 h-5" />
-                    </Link>
+            {selectedProject && (
+                <div className="gantt-page-header flex items-start justify-between gap-4">
                     <div>
-                        <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                            <Calendar className="w-5 h-5 text-gray-600" />
+                        <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
+                            <Calendar className="w-6 h-6 text-blue-600" />
                             Gantt Chart
                         </h1>
-                        <p className="text-gray-500 text-xs mt-0.5 font-medium">แผนงานและกำหนดการโครงการ</p>
+                        <p className="text-gray-500 text-sm mt-0.5">แผนงานและกำหนดการโครงการ</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setAddTaskInitialData({
+                                    type: 'task',
+                                    planStartDate: format(new Date(), 'yyyy-MM-dd')
+                                });
+                                setShowAddTaskModal(true);
+                            }}
+                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors"
+                        >
+                            <Plus className="w-4 h-4" />
+                            เพิ่มงาน
+                        </button>
+
+                        <input
+                            ref={importInputRef}
+                            type="file"
+                            accept=".csv"
+                            className="hidden"
+                            onChange={handleImportFile}
+                        />
+                        <button
+                            type="button"
+                            onClick={() => importInputRef.current?.click()}
+                            disabled={importing}
+                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-60 transition-colors"
+                        >
+                            <FileUp className="w-4 h-4" />
+                            {importing ? 'กำลังนำเข้า...' : 'Import'}
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleExport}
+                            className="px-4 py-2 text-sm font-medium text-gray-800 bg-white border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                        >
+                            Export CSV
+                        </button>
+
+                        <Link
+                            href={`/scurve?project=${selectedProject.id}`}
+                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-emerald-700 bg-white border border-emerald-200 rounded hover:bg-emerald-50 transition-colors"
+                        >
+                            <TrendingUp className="w-4 h-4" />
+                            S-Curve
+                        </Link>
+
+                        <Link
+                            href={`/projects/${selectedProject.id}`}
+                            className="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+                        >
+                            View Details →
+                        </Link>
                     </div>
                 </div>
+            )}
 
-                <div className="flex items-center gap-2">
-                    {/* Only show project switcher when project is NOT specified via URL or prop */}
-                    {!preSelectedProjectId && !paramId && (
-                        <select
-                            value={selectedProjectId}
-                            onChange={(e) => handleProjectChange(e.target.value)}
-                            className="px-3 py-1.5 bg-white border border-gray-300 rounded-sm text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors"
-                        >
-                            {projects.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                        </select>
-                    )}
-
-                    <button onClick={() => { setAddTaskInitialData(undefined); setShowAddTaskModal(true); }} className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-sm flex items-center gap-1.5 hover:bg-blue-700 transition-colors">
-                        <Plus className="w-4 h-4" /> เพิ่มงาน
-                    </button>
-
-                    <label className={`px-3 py-1.5 text-sm font-medium border rounded-sm flex items-center gap-2 transition-colors cursor-pointer ${importing ? 'bg-gray-100 text-gray-400' : 'bg-white border-gray-300 text-blue-600 hover:bg-blue-50'}`}>
-                        {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderKanban className="w-4 h-4" />}
-                        Import <input type="file" accept=".csv" className="hidden" onChange={handleImportFile} disabled={importing} />
-                    </label>
-
-                    <button onClick={handleExport} disabled={tasks.length === 0} className={`px-3 py-1.5 text-sm font-medium border rounded-sm flex items-center gap-2 transition-colors ${tasks.length === 0 ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed' : 'text-gray-700 bg-white border-gray-300 hover:bg-gray-50'}`}>
-                        Export CSV
-                    </button>
-
-                    <Link href={`/scurve/${selectedProjectId}`} className="px-3 py-1.5 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-sm flex items-center gap-1.5 hover:bg-emerald-100 transition-colors">
-                        <TrendingUp className="w-4 h-4" />
-                        S-Curve
-                    </Link>
-
-                    <Link href={`/projects/${selectedProjectId}`} className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-sm flex items-center gap-1.5 hover:bg-blue-100 transition-colors">
-                        View Details →
-                    </Link>
-                </div>
-            </div>
-
+            {/* Gantt Chart */}
             {selectedProject && (
                 <GanttChart
                     tasks={tasks}
+                    employees={employees}
                     startDate={selectedProject.startDate}
                     endDate={selectedProject.endDate}
                     title={selectedProject.name}
@@ -651,17 +641,16 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
                     onAddSubTask={handleAddSubTask}
                     onAddTaskToCategory={handleAddTaskToCategory}
                     updatingTaskIds={updatingTaskIds}
-                    categoryOrder={selectedProject.categoryOrder}
-                    onCategoryOrderChange={handleCategoryOrderChange}
-                    subcategoryOrder={selectedProject.subcategoryOrder}
-                    onSubcategoryOrderChange={handleSubcategoryOrderChange}
-                    isSavingOrder={isSavingOrder}
                 />
             )}
 
+            {/* Modals */}
             <AddTaskModal
                 isOpen={showAddTaskModal}
-                onClose={() => { setShowAddTaskModal(false); setAddTaskInitialData(undefined); }}
+                onClose={() => {
+                    setShowAddTaskModal(false);
+                    setAddTaskInitialData(undefined);
+                }}
                 onSave={handleAddTask}
                 existingCategories={existingCategories}
                 tasks={tasks}
@@ -677,3 +666,4 @@ export default function GanttClient({ preSelectedProjectId }: { preSelectedProje
         </div>
     );
 }
+

@@ -1,13 +1,13 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import SCurveChart from '@/components/charts/scurve/SCurveChart';
-import { Download, Calendar, Loader2, FolderKanban, TrendingUp, X, Save, ArrowLeft } from 'lucide-react';
+import { Calendar, Loader2, FolderKanban, TrendingUp, BarChart3 } from 'lucide-react';
 import Link from 'next/link';
-import { Project, Task } from '@/types/construction';
-import { getProjects, getTasks } from '@/lib/firestore';
-import { format, differenceInDays, parseISO, addDays, isBefore } from 'date-fns';
+import { Employee, Project, Task } from '@/types/construction';
+import { getEmployees, getProjects, getTasks } from '@/lib/firestore';
+import { format, isBefore } from 'date-fns';
 import { parseDate } from '@/components/charts/gantt/utils';
 
 export default function SCurvePage() {
@@ -16,10 +16,10 @@ export default function SCurvePage() {
 
     const [projects, setProjects] = useState<Project[]>([]);
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedProjectId, setSelectedProjectId] = useState<string>('');
 
-    // Define fetch functions FIRST (useCallback)
     const fetchProjects = useCallback(async () => {
         try {
             setLoading(true);
@@ -46,7 +46,6 @@ export default function SCurvePage() {
         }
     }, [selectedProjectId]);
 
-    // THEN use them in useEffect
     useEffect(() => {
         fetchProjects();
     }, [fetchProjects]);
@@ -62,6 +61,18 @@ export default function SCurvePage() {
             fetchTasks();
         }
     }, [selectedProjectId, fetchTasks]);
+
+    useEffect(() => {
+        const fetchEmployeesData = async () => {
+            try {
+                const employeesData = await getEmployees();
+                setEmployees(employeesData);
+            } catch (error) {
+                console.error('Error fetching employees:', error);
+            }
+        };
+        fetchEmployeesData();
+    }, []);
 
     const selectedProject = projects.find(p => p.id === selectedProjectId);
 
@@ -79,10 +90,10 @@ export default function SCurvePage() {
             <div className="space-y-6">
                 <div>
                     <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
-                        <TrendingUp className="w-6 h-6 text-blue-600" />
-                        S-Curve Analysis
+                        <TrendingUp className="w-6 h-6 text-emerald-600" />
+                        S-Curve วิเคราะห์และวางแผน
                     </h1>
-                    <p className="text-gray-500 text-sm mt-0.5">วิเคราะห์ความคืบหน้าโครงการแบบ S-Curve</p>
+                    <p className="text-gray-500 text-sm mt-0.5">วิเคราะห์ความคืบหน้าและแนวโน้มโครงการแบบ S-Curve</p>
                 </div>
 
                 <div className="bg-white rounded border border-gray-300 p-12 text-center shadow-none">
@@ -101,56 +112,48 @@ export default function SCurvePage() {
 
     return (
         <div className="space-y-4 font-sans">
-            {/* Header with Inline Stats */}
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-                {/* Left: Title */}
-                <div className="flex items-center gap-4">
-                    <Link href="/projects" className="p-2 -ml-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors" title="กลับไปหน้ารวมโครงการ">
-                        <ArrowLeft className="w-5 h-5" />
-                    </Link>
+            {selectedProject && (
+                <div className="gantt-page-header flex items-start justify-between gap-4">
                     <div>
-                        <h1 className="text-xl font-bold text-gray-800 flex items-center gap-2">
-                            <TrendingUp className="w-5 h-5 text-gray-600" />
-                            S-Curve Analysis
+                        <h1 className="text-2xl font-semibold text-gray-900 flex items-center gap-2">
+                            <TrendingUp className="w-6 h-6 text-emerald-600" />
+                            S-Curve วิเคราะห์และวางแผน
                         </h1>
-                        <p className="text-gray-500 text-xs mt-0.5 font-medium">วิเคราะห์แผนงานและผลงานจริง</p>
+                        <p className="text-gray-500 text-sm mt-0.5">วิเคราะห์แผนงานและผลจริงของโครงการ</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                        <Link
+                            href={`/gantt?project=${selectedProjectId}`}
+                            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 transition-colors"
+                        >
+                            <BarChart3 className="w-4 h-4" />
+                            ไปหน้า Gantt
+                        </Link>
+
+                        {!projectParam && (
+                            <select
+                                value={selectedProjectId}
+                                onChange={(e) => setSelectedProjectId(e.target.value)}
+                                className="px-3 py-2 bg-white border border-gray-300 rounded text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors"
+                            >
+                                {projects.map(p => (
+                                    <option key={p.id} value={p.id}>{p.name}</option>
+                                ))}
+                            </select>
+                        )}
+
+                        <Link
+                            href={`/projects/${selectedProjectId}`}
+                            className="px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded hover:bg-blue-50 transition-colors"
+                        >
+                            View Details →
+                        </Link>
                     </div>
                 </div>
+            )}
 
-                {/* Right: Actions */}
-                <div className="flex items-center gap-2">
-                    {!projectParam && (
-                        <select
-                            value={selectedProjectId}
-                            onChange={(e) => setSelectedProjectId(e.target.value)}
-                            className="px-3 py-1.5 bg-white border border-gray-300 rounded-sm text-sm text-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none transition-colors"
-                        >
-                            {projects.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                        </select>
-                    )}
-
-                    <Link
-                        href={`/gantt/${selectedProjectId}`}
-                        className="px-3 py-1.5 text-sm font-medium text-orange-600 bg-orange-50 border border-orange-200 rounded-sm flex items-center gap-1.5 hover:bg-orange-100 transition-colors"
-                    >
-                        <Calendar className="w-4 h-4" />
-                        Gantt Chart
-                    </Link>
-
-                    <Link
-                        href={`/projects/${selectedProjectId}`}
-                        className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-sm flex items-center gap-1.5 hover:bg-blue-100 transition-colors"
-                    >
-                        View Details →
-                    </Link>
-                </div>
-            </div>
-
-            {/* S-Curve Chart */}
             {selectedProject && (() => {
-                // Calculate min start from tasks to align S-Curve with work
                 const minTaskStart = tasks.reduce((min, t) => {
                     if (!t.planStartDate) return min;
                     const d = parseDate(t.planStartDate);
@@ -158,7 +161,6 @@ export default function SCurvePage() {
                     return !min || isBefore(d, min) ? d : min;
                 }, null as Date | null);
 
-                // If tasks exist, use earliest task start, otherwise project start
                 const chartStart = minTaskStart
                     ? format(minTaskStart, 'dd/MM/yyyy')
                     : selectedProject.startDate;
@@ -166,16 +168,15 @@ export default function SCurvePage() {
                 return (
                     <SCurveChart
                         tasks={tasks}
+                        employees={employees}
                         startDate={chartStart}
                         endDate={selectedProject.endDate}
                         title={selectedProject.name}
                         onTaskUpdate={async (taskId, field, value) => {
-                            // Optimistic Update
                             setTasks(prev => prev.map(t =>
                                 t.id === taskId ? { ...t, [field]: value } : t
                             ));
-                            // TODO: Call API to save to Firestore
-                            // await updateTask(taskId, { [field]: value });
+                            // TODO: persist to Firestore in next phase
                         }}
                     />
                 );

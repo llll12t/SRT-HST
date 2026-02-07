@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState } from 'react';
 import Link from 'next/link';
@@ -14,6 +14,7 @@ import {
     ChevronLeft,
     ChevronRight,
     Building2,
+    Users,
     Menu,
     X
 } from 'lucide-react';
@@ -30,6 +31,7 @@ const navigation: NavItem[] = [
     { name: 'Dashboard', href: '/', icon: LayoutDashboard },
     { name: 'โครงการ', href: '/projects', icon: FolderKanban },
     { name: 'รายการงาน', href: '/tasks', icon: ListTodo },
+    { name: 'พนักงาน', href: '/employees', icon: Users },
     { name: 'รายงาน', href: '/reports', icon: FileSpreadsheet },
     { name: 'ตั้งค่า', href: '/settings', icon: Settings },
 ];
@@ -119,7 +121,7 @@ export default function Sidebar() {
             )}
 
             {/* Desktop Sidebar */}
-            <aside className={clsx(
+            <aside data-layout-sidebar className={clsx(
                 'hidden lg:block fixed left-0 top-0 h-screen bg-white border-r border-gray-200 transition-all duration-200 z-40',
                 collapsed ? 'w-16' : 'w-56'
             )}>
@@ -127,7 +129,7 @@ export default function Sidebar() {
             </aside>
 
             {/* Mobile Sidebar */}
-            <aside className={clsx(
+            <aside data-layout-sidebar className={clsx(
                 'lg:hidden fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 transition-transform duration-200 z-50',
                 mobileOpen ? 'translate-x-0' : '-translate-x-full'
             )}>
@@ -136,3 +138,4 @@ export default function Sidebar() {
         </>
     );
 }
+

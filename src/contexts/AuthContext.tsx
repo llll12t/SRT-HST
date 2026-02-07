@@ -39,8 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Fetch members from Firebase
             const members = await getMembers();
 
-            // Find member by email (case-insensitive)
-            const member = members.find(m => m.email.toLowerCase() === email.toLowerCase());
+            // Find member by email (case-insensitive and trim whitespace)
+            const normalizedInputEmail = email.trim().toLowerCase();
+            const member = members.find(m => m.email?.toLowerCase() === normalizedInputEmail);
 
             if (!member) {
                 return { success: false, message: 'ไม่พบอีเมลนี้ในระบบ กรุณาติดต่อผู้ดูแลระบบ' };
