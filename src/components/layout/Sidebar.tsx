@@ -121,7 +121,7 @@ export default function Sidebar() {
                 </div>
                 {!collapsed && (
                     <div>
-                        <h1 className="text-gray-900 font-semibold text-base">{brandName}</h1>
+                        <h3 className="text-gray-900 font-semibold text-base">{brandName}</h3>
                         <p className="text-gray-600 text-xs">Construction MS</p>
                     </div>
                 )}

@@ -21,8 +21,8 @@ interface UseGanttTimelineProps {
 export function useGanttTimeline({ startDate, endDate, viewMode, containerWidth }: UseGanttTimelineProps) {
     // 1. Calculate range based on Project Start/End
     const timeRange = useMemo(() => {
-        let pStart = startDate ? parseDate(startDate) : startOfMonth(new Date());
-        let pEnd = endDate ? parseDate(endDate) : endOfMonth(addMonths(new Date(), 12));
+        let pStart = startDate ? parseDate(startDate)! : startOfMonth(new Date());
+        let pEnd = endDate ? parseDate(endDate)! : endOfMonth(addMonths(new Date(), 12));
 
         if (isNaN(pStart.getTime())) pStart = startOfMonth(new Date());
         if (isNaN(pEnd.getTime())) pEnd = endOfMonth(addMonths(new Date(), 12));

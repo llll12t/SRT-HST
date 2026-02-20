@@ -11,7 +11,7 @@ export const getTaskScope = (task: Task, mode: SCurveMode): number => {
   if (mode === 'financial') {
     return Number(task.cost) || 0;
   }
-  const duration = differenceInDays(parseDate(task.planEndDate), parseDate(task.planStartDate)) + 1;
+  const duration = differenceInDays(parseDate(task.planEndDate)!, parseDate(task.planStartDate)!) + 1;
   return Math.max(0, duration);
 };
 

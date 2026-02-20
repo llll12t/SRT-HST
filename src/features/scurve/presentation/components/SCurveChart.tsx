@@ -94,7 +94,7 @@ export default function SCurveChart(props: SCurveChartProps) {
 
         return {
             totalCost: manualBudget !== null ? manualBudget : calculatedCost,
-            totalDuration: leafTasks.reduce((sum, t) => sum + Math.max(0, differenceInDays(parseDate(t.planEndDate), parseDate(t.planStartDate)) + 1), 0)
+            totalDuration: leafTasks.reduce((sum, t) => sum + Math.max(0, differenceInDays(parseDate(t.planEndDate)!, parseDate(t.planStartDate)!) + 1), 0)
         };
     }, [tasks, manualBudget]);
 
@@ -107,7 +107,7 @@ export default function SCurveChart(props: SCurveChartProps) {
         if (calcMode === 'financial') {
             weight = Number(task.cost) || 0;
         } else {
-            weight = Math.max(0, differenceInDays(parseDate(task.planEndDate), parseDate(task.planStartDate)) + 1);
+            weight = Math.max(0, differenceInDays(parseDate(task.planEndDate)!, parseDate(task.planStartDate)!) + 1);
         }
         return (weight / sCurveData.totalScope) * 100;
     };
@@ -117,7 +117,7 @@ export default function SCurveChart(props: SCurveChartProps) {
     const [customDate, setCustomDate] = useState<Date | null>(() => {
         if (typeof window === 'undefined') return null;
         const saved = localStorage.getItem('scurve_custom_date');
-        return saved ? parseDate(saved) : null;
+        return saved ? parseDate(saved)! : null;
     });
 
     useEffect(() => {
@@ -174,8 +174,8 @@ export default function SCurveChart(props: SCurveChartProps) {
 
         leafTasks.forEach((t) => {
             if (!t.planStartDate || !t.planEndDate) return;
-            const planStart = parseDate(t.planStartDate);
-            const planEnd = parseDate(t.planEndDate);
+            const planStart = parseDate(t.planStartDate)!;
+            const planEnd = parseDate(t.planEndDate)!;
             if (![planStart, planEnd].every(isValid)) return;
 
             if (!overallPlanStart || isBefore(planStart, overallPlanStart)) overallPlanStart = planStart;
@@ -448,12 +448,12 @@ export default function SCurveChart(props: SCurveChartProps) {
                             )}
                         </div>
                     )}
-                    {visibleColumns.planDuration && <div className="w-[60px] text-right text-xs text-gray-600 font-mono shrink-0 px-1">{differenceInDays(parseDate(task.planEndDate), parseDate(task.planStartDate)) + 1}d</div>}
-                    {visibleColumns.actualDuration && <div className="w-[60px] text-right text-xs text-green-600 font-mono shrink-0 px-1">{task.actualStartDate && task.actualEndDate ? differenceInDays(parseDate(task.actualEndDate), parseDate(task.actualStartDate)) + 1 : '-'}d</div>}
+                    {visibleColumns.planDuration && <div className="w-[60px] text-right text-xs text-gray-600 font-mono shrink-0 px-1">{differenceInDays(parseDate(task.planEndDate)!, parseDate(task.planStartDate)!) + 1}d</div>}
+                    {visibleColumns.actualDuration && <div className="w-[60px] text-right text-xs text-green-600 font-mono shrink-0 px-1">{task.actualStartDate && task.actualEndDate ? differenceInDays(parseDate(task.actualEndDate)!, parseDate(task.actualStartDate)!) + 1 : '-'}d</div>}
                     {visibleColumns.period && (
                         <div className="w-[150px] text-right text-[10px] font-mono shrink-0 px-2 flex flex-col justify-center leading-tight">
                             <div className="text-gray-600">
-                                {isValid(parseDate(task.planStartDate)) ? `${format(parseDate(task.planStartDate), 'dd/MM')} - ${format(parseDate(task.planEndDate), 'dd/MM')}` : '-'}
+                                {isValid(parseDate(task.planStartDate)!) ? `${format(parseDate(task.planStartDate)!, 'dd/MM')} - ${format(parseDate(task.planEndDate)!, 'dd/MM')}` : '-'}
                             </div>
                         </div>
                     )}

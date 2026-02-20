@@ -166,9 +166,9 @@ export const TaskRow: React.FC<TaskRowProps> = ({
         if (!t.planEndDate || !t.actualEndDate) return null;
         if (Number(t.progress) !== 100) return null;
 
-        const planEnd = parseDate(t.planEndDate);
-        const actualEnd = parseDate(t.actualEndDate);
-        if ([planEnd, actualEnd].some(d => isNaN(d.getTime()))) return null;
+        const planEnd = parseDate(t.planEndDate)!;
+        const actualEnd = parseDate(t.actualEndDate)!;
+        if (!planEnd || !actualEnd || [planEnd, actualEnd].some(d => isNaN(d.getTime()))) return null;
 
         // Baseline = planned end date. Negative means finished later than plan.
         return differenceInDays(planEnd, actualEnd);

@@ -22,8 +22,8 @@ export function computeSCurveData(input: SCurveComputationInput): SCurveComputat
 
     const weightPercent = (weight / totalScope) * 100;
 
-    const pStart = parseDate(task.planStartDate);
-    const pEnd = parseDate(task.planEndDate);
+    const pStart = parseDate(task.planStartDate)!;
+    const pEnd = parseDate(task.planEndDate)!;
 
     if (isValid(pStart) && isValid(pEnd) && !isAfter(pStart, pEnd)) {
       const pDuration = differenceInDays(pEnd, pStart) + 1;
@@ -41,12 +41,12 @@ export function computeSCurveData(input: SCurveComputationInput): SCurveComputat
     const progress = Number(task.progress) || 0;
     if (progress <= 0) return;
 
-    let aStart = task.actualStartDate ? parseDate(task.actualStartDate) : pStart;
+    let aStart = task.actualStartDate ? parseDate(task.actualStartDate)! : pStart;
     const today = new Date();
     let aEnd: Date;
 
-    if (task.actualEndDate && isValid(parseDate(task.actualEndDate))) {
-      aEnd = parseDate(task.actualEndDate);
+    if (task.actualEndDate && isValid(parseDate(task.actualEndDate)!)) {
+      aEnd = parseDate(task.actualEndDate)!;
     } else {
       aEnd = today;
     }
@@ -75,10 +75,10 @@ export function computeSCurveData(input: SCurveComputationInput): SCurveComputat
 
   leafTasks.forEach(task => {
     if (task.actualEndDate) {
-      const d = parseDate(task.actualEndDate);
+      const d = parseDate(task.actualEndDate)!;
       if (isValid(d) && isAfter(d, maxActualDate)) maxActualDate = d;
     } else if (task.status === 'completed' && task.actualStartDate) {
-      const d = parseDate(task.actualStartDate);
+      const d = parseDate(task.actualStartDate)!;
       if (isValid(d) && isAfter(d, maxActualDate)) maxActualDate = d;
     }
   });

@@ -18,8 +18,8 @@ export const getCategorySummary = (catTasks: Task[], getTaskWeight?: (t: Task) =
 
   catTasks.filter(t => t.type !== 'group').forEach(t => {
     if (!t.planStartDate || !t.planEndDate) return;
-    const start = parseDate(t.planStartDate);
-    const end = parseDate(t.planEndDate);
+    const start = parseDate(t.planStartDate)!;
+    const end = parseDate(t.planEndDate)!;
     if (!minDate || isBefore(start, minDate)) minDate = start;
     if (!maxDate || isAfter(end, maxDate)) maxDate = end;
   });
@@ -60,24 +60,24 @@ export const getGroupSummary = (groupTask: Task, tasks: Task[], getTaskWeight: (
 
   leafTasks.forEach(task => {
     if (task.planStartDate) {
-      const d = parseDate(task.planStartDate);
+      const d = parseDate(task.planStartDate)!;
       if (!minDate || isBefore(d, minDate)) minDate = d;
     }
     if (task.planEndDate) {
-      const d = parseDate(task.planEndDate);
+      const d = parseDate(task.planEndDate)!;
       if (!maxDate || isAfter(d, maxDate)) maxDate = d;
     }
 
     if (task.actualStartDate) {
-      const d = parseDate(task.actualStartDate);
+      const d = parseDate(task.actualStartDate)!;
       if (!minActualDate || isBefore(d, minActualDate)) minActualDate = d;
 
       let effectiveEnd = d;
       if (task.actualEndDate) {
-        effectiveEnd = parseDate(task.actualEndDate);
+        effectiveEnd = parseDate(task.actualEndDate)!;
       } else if ((task.progress || 0) > 0) {
-        const pStart = parseDate(task.planStartDate);
-        const pEnd = parseDate(task.planEndDate);
+        const pStart = parseDate(task.planStartDate)!;
+        const pEnd = parseDate(task.planEndDate)!;
         const plannedDuration = differenceInDays(pEnd, pStart) + 1;
         const progressDays = Math.round(plannedDuration * (Number(task.progress) / 100));
         effectiveEnd = addDays(d, Math.max(0, progressDays - 1));

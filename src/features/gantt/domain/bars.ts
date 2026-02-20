@@ -63,7 +63,7 @@ export const getActualDates = (
   let actualStart: Date, actualEnd: Date;
 
   if (!isUpdating && dragState && dragState.taskId === task.id && dragState.barType === 'actual') {
-    actualStart = dragState.currentStart || parseDate(task.actualStartDate || task.planStartDate);
+    actualStart = dragState.currentStart || parseDate(task.actualStartDate || task.planStartDate)!;
     actualEnd = dragState.currentEnd || actualStart;
   } else {
     const hasActualStart = task.actualStartDate && task.actualStartDate.length > 0;
@@ -73,15 +73,15 @@ export const getActualDates = (
     if (!hasActualStart && !hasProgress) return null;
 
     if (hasActualStart) {
-      actualStart = parseDate(task.actualStartDate!);
+      actualStart = parseDate(task.actualStartDate!)!;
     } else {
-      actualStart = parseDate(task.planStartDate);
+      actualStart = parseDate(task.planStartDate)!;
     }
 
     if (hasActualEnd) {
-      actualEnd = parseDate(task.actualEndDate!);
+      actualEnd = parseDate(task.actualEndDate!)!;
     } else if (hasProgress) {
-      const plannedDuration = differenceInDays(parseDate(task.planEndDate), parseDate(task.planStartDate)) + 1;
+      const plannedDuration = differenceInDays(parseDate(task.planEndDate)!, parseDate(task.planStartDate)!) + 1;
       const progressDays = Math.round(plannedDuration * (Number(task.progress) / 100));
       actualEnd = new Date(actualStart);
       actualEnd.setDate(actualEnd.getDate() + Math.max(0, progressDays - 1));
@@ -117,12 +117,12 @@ export const getBarStyle = (
   }
 
   if (!isUpdating && dragState && dragState.taskId === task.id && type === dragState.barType) {
-    taskStart = dragState.currentStart || parseDate(task.planStartDate);
-    taskEnd = dragState.currentEnd || parseDate(task.planEndDate);
+    taskStart = dragState.currentStart || parseDate(task.planStartDate)!;
+    taskEnd = dragState.currentEnd || parseDate(task.planEndDate)!;
   } else {
     if (type === 'plan') {
-      taskStart = parseDate(task.planStartDate);
-      taskEnd = parseDate(task.planEndDate);
+      taskStart = parseDate(task.planStartDate)!;
+      taskEnd = parseDate(task.planEndDate)!;
 
       if (dragDeltaDays !== 0) {
         taskStart = addDays(taskStart, dragDeltaDays);
