@@ -1,0 +1,129 @@
+src/app/convert-csv/page.tsx(6,10): error TS2305: Module '"@/lib/firestore"' has no exported member 'deleteCsvTemplate'.
+src/app/convert-csv/page.tsx(6,29): error TS2305: Module '"@/lib/firestore"' has no exported member 'getCsvTemplates'.
+src/app/convert-csv/page.tsx(6,46): error TS2305: Module '"@/lib/firestore"' has no exported member 'saveCsvTemplate'.
+src/app/cost-code/[id]/page.tsx(79,22): error TS2339: Property 'costCode' does not exist on type 'Task'.
+src/app/cost-code/[id]/page.tsx(80,33): error TS2339: Property 'costCode' does not exist on type 'Task'.
+src/app/cost-code/[id]/page.tsx(82,32): error TS2339: Property 'costCode' does not exist on type 'Task'.
+src/app/cost-code/[id]/page.tsx(82,73): error TS2339: Property 'costCode' does not exist on type 'Task'.
+src/app/cost-code/[id]/page.tsx(84,28): error TS2339: Property 'costCode' does not exist on type 'Task'.
+src/app/cost-code/[id]/page.tsx(85,28): error TS2339: Property 'costCode' does not exist on type 'Task'.
+src/app/cost-code/[id]/page.tsx(186,90): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/cost-code/[id]/page.tsx(186,109): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/employees/page.tsx(15,10): error TS2305: Module '"@/types/construction"' has no exported member 'Employee'.
+src/app/employees/page.tsx(16,10): error TS2305: Module '"@/lib/firestore"' has no exported member 'createEmployee'.
+src/app/employees/page.tsx(16,26): error TS2305: Module '"@/lib/firestore"' has no exported member 'deleteEmployee'.
+src/app/employees/page.tsx(16,42): error TS2305: Module '"@/lib/firestore"' has no exported member 'getEmployees'.
+src/app/notifications/page.tsx(152,62): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/app/notifications/page.tsx(152,85): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/app/notifications/page.tsx(152,124): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/app/weekly-cost/page.tsx(6,36): error TS2305: Module '"@/lib/firestore"' has no exported member 'getExpenses'.
+src/app/weekly-cost/page.tsx(6,49): error TS2305: Module '"@/lib/firestore"' has no exported member 'createExpense'.
+src/app/weekly-cost/page.tsx(6,64): error TS2305: Module '"@/lib/firestore"' has no exported member 'deleteExpense'.
+src/app/weekly-cost/page.tsx(8,25): error TS2305: Module '"@/types/construction"' has no exported member 'Expense'.
+src/app/weekly-cost/page.tsx(87,60): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/app/weekly-cost/page.tsx(110,46): error TS2339: Property 'googleSheetUrl' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(212,38): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(212,48): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(213,48): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(226,38): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(226,63): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(232,67): error TS2339: Property 'code' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(237,81): error TS2339: Property 'googleSheetUrl' does not exist on type 'Project'.
+src/app/weekly-cost/page.tsx(238,58): error TS2353: Object literal may only specify known properties, and 'googleSheetUrl' does not exist in type 'Partial<Project>'.
+src/app/weekly-cost/page.tsx(468,58): error TS2339: Property 'costCode' does not exist on type 'Task'.
+src/app/weekly-cost/page.tsx(1213,117): error TS2339: Property 'code' does not exist on type 'Project'.
+src/features/gantt/presentation/components/GanttChart.tsx(4,16): error TS2305: Module '"@/types/construction"' has no exported member 'Employee'.
+src/features/gantt/presentation/components/GanttClient.tsx(8,25): error TS2305: Module '"@/types/construction"' has no exported member 'Employee'.
+src/features/gantt/presentation/components/GanttClient.tsx(9,57): error TS2305: Module '"@/lib/firestore"' has no exported member 'getEmployees'.
+src/features/gantt/presentation/components/GanttClient.tsx(377,25): error TS2353: Object literal may only specify known properties, and 'dueProcurementDate' does not exist in type 'Partial<Task>'.
+src/features/gantt/presentation/components/GanttClient.tsx(535,21): error TS2322: Type '{ tasks: Task[]; employees: Employee[]; startDate: string | undefined; endDate: string | undefined; title: string; viewMode: ViewMode; onViewModeChange: Dispatch<SetStateAction<ViewMode>>; ... 11 more ...; isApplyingOffsets: boolean; }' is not assignable to type 'IntrinsicAttributes & GanttChartProps'.
+  Property 'employees' does not exist on type 'IntrinsicAttributes & GanttChartProps'.
+src/features/gantt/presentation/components/TaskRow.tsx(3,16): error TS2305: Module '"@/types/construction"' has no exported member 'Employee'.
+src/features/gantt/presentation/components/TaskRow.tsx(114,35): error TS2339: Property 'assignedEmployeeIds' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(169,25): error TS2554: Expected 1 arguments, but got 0.
+src/features/gantt/presentation/components/TaskRow.tsx(170,27): error TS2554: Expected 1 arguments, but got 0.
+src/features/gantt/presentation/components/TaskRow.tsx(185,47): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(209,15): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(209,71): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(210,15): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(210,76): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(211,15): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(211,56): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(217,24): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(220,24): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(223,24): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(232,29): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(233,37): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(262,19): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(262,67): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(263,19): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(263,73): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(264,19): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(264,53): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(270,76): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(270,98): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(270,123): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(291,42): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/features/gantt/presentation/components/TaskRow.tsx(298,13): error TS2353: Object literal may only specify known properties, and 'assignedEmployeeIds' does not exist in type 'Partial<Task>'.
+src/features/gantt/presentation/components/TaskRow.tsx(463,71): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(464,54): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(464,88): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(467,49): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(475,54): error TS2339: Property 'dueProcurementDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(476,83): error TS2353: Object literal may only specify known properties, and 'dueProcurementDate' does not exist in type 'Partial<Task>'.
+src/features/gantt/presentation/components/TaskRow.tsx(490,71): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(491,54): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(491,91): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(494,49): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(502,54): error TS2339: Property 'dueMaterialOnSiteDate' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(503,83): error TS2353: Object literal may only specify known properties, and 'dueMaterialOnSiteDate' does not exist in type 'Partial<Task>'.
+src/features/gantt/presentation/components/TaskRow.tsx(517,71): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(518,54): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(518,79): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(521,49): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(529,54): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/features/gantt/presentation/components/TaskRow.tsx(530,83): error TS2353: Object literal may only specify known properties, and 'dateOfUse' does not exist in type 'Partial<Task>'.
+src/features/gantt/presentation/components/TaskRow.tsx(553,66): error TS2353: Object literal may only specify known properties, and 'procurementStatus' does not exist in type 'Partial<Task>'.
+src/features/gantt/presentation/components/TaskRow.tsx(553,108): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(128,43): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(146,14): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(146,65): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(171,90): error TS2344: Type 'TaskDateField' does not satisfy the constraint 'keyof Task'.
+  Type '"dateOfUse"' is not assignable to type 'keyof Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(270,73): error TS7053: Element implicitly has an 'any' type because expression of type 'TaskDateField' can't be used to index type 'Task'.
+  Property 'dateOfUse' does not exist on type 'Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(487,41): error TS2353: Object literal may only specify known properties, and 'procurementStatus' does not exist in type 'Partial<Task>'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(544,67): error TS2344: Type 'TaskDateField' does not satisfy the constraint 'keyof Task'.
+  Type '"dateOfUse"' is not assignable to type 'keyof Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(552,55): error TS2344: Type 'TaskDateField' does not satisfy the constraint 'keyof Task'.
+  Type '"dateOfUse"' is not assignable to type 'keyof Task'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(559,51): error TS2559: Type 'Partial<Pick<Task, TaskDateField>>' has no properties in common with type 'Partial<Task>'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(758,67): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'Project'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(762,71): error TS2353: Object literal may only specify known properties, and 'color' does not exist in type 'Partial<Project>'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(786,87): error TS2339: Property 'color' does not exist on type 'Project'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(884,93): error TS2339: Property 'color' does not exist on type 'Project'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(989,90): error TS2339: Property 'color' does not exist on type 'Project'.
+src/features/procurement/presentation/components/Procurement4WeekGanttTable.tsx(990,86): error TS2339: Property 'color' does not exist on type 'Project'.
+src/features/procurement/presentation/components/ProcurementOrderReport.tsx(61,43): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/procurement/presentation/components/ProcurementOrderReport.tsx(70,14): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/procurement/presentation/components/ProcurementOrderReport.tsx(70,65): error TS2339: Property 'procurementStatus' does not exist on type 'Task'.
+src/features/procurement/presentation/components/ProcurementOrderReport.tsx(109,34): error TS7053: Element implicitly has an 'any' type because expression of type '"dateOfUse" | "dueProcurementDate" | "dueMaterialOnSiteDate"' can't be used to index type 'Task'.
+  Property 'dateOfUse' does not exist on type 'Task'.
+src/features/procurement/presentation/components/ProcurementOrderReport.tsx(166,41): error TS2353: Object literal may only specify known properties, and 'procurementStatus' does not exist in type 'Partial<Task>'.
+src/features/scurve/presentation/components/SCurveChart.tsx(4,10): error TS2305: Module '"@/types/construction"' has no exported member 'Employee'.
+src/features/scurve/presentation/components/SCurveChart.tsx(383,34): error TS2339: Property 'assignedEmployeeIds' does not exist on type 'Task'.
+src/features/scurve/presentation/routes/SCurvePageClient.tsx(8,10): error TS2305: Module '"@/types/construction"' has no exported member 'Employee'.
+src/features/scurve/presentation/routes/SCurvePageClient.tsx(9,10): error TS2305: Module '"@/lib/firestore"' has no exported member 'getEmployees'.
+src/lib/line-flex-templates.ts(229,65): error TS2339: Property 'dateOfUse' does not exist on type 'Task'.
+src/lib/report-service.ts(2,36): error TS2305: Module '"@/lib/firestore"' has no exported member 'getExpenses'.
+src/lib/report-service.ts(3,25): error TS2305: Module '"@/types/construction"' has no exported member 'Expense'.
+src/lib/report-service.ts(31,42): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/lib/report-service.ts(32,39): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/lib/report-service.ts(33,33): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/lib/report-service.ts(34,39): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/lib/report-service.ts(37,54): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/lib/report-service.ts(37,129): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/lib/report-service.ts(38,30): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/lib/report-service.ts(39,36): error TS7006: Parameter 'e' implicitly has an 'any' type.
+src/lib/report-service.ts(51,19): error TS7006: Parameter 'task' implicitly has an 'any' type.
+src/lib/report-service.ts(76,22): error TS7006: Parameter 'exp' implicitly has an 'any' type.

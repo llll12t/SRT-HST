@@ -1,0 +1,131 @@
+﻿src/features/gantt/domain/summaries.ts(23,30): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/domain/summaries.ts(24,29): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/domain/summaries.ts(64,32): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/domain/summaries.ts(68,31): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/domain/summaries.ts(73,38): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/domain/summaries.ts(81,50): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/domain/summaries.ts(83,32): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/domain/summaries.ts(86,37): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(928,54): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(955,17): error TS2322: Type '{ start: Date | null; end: Date | null; }' is not assignable to type 'DateRange'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(1034,82): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(1066,37): error TS2322: Type '{ start: Date | null; end: Date | null; }' is not assignable to type '{ start: Date; end: Date; }'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(1165,117): error TS2345: Argument of type '{ start: Date | null; end: Date | null; }' is not assignable to parameter of type 'DateRange'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(1208,53): error TS2322: Type '{ start: Date | null; end: Date | null; }' is not assignable to type 'DateRange'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(1357,128): error TS2345: Argument of type '{ start: Date | null; end: Date | null; }' is not assignable to parameter of type 'DateRange'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(1510,131): error TS2345: Argument of type '{ start: Date | null; end: Date | null; }' is not assignable to parameter of type 'DateRange'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/gantt/presentation/components/GanttChart.tsx(1544,53): error TS2322: Type '{ start: Date | null; end: Date | null; }' is not assignable to type 'DateRange'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/gantt/presentation/components/TaskRow.tsx(171,50): error TS18047: 'd' is possibly 'null'.
+src/features/gantt/presentation/components/TaskRow.tsx(174,33): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(27,19): error TS18047: 'pStart' is possibly 'null'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(28,19): error TS18047: 'pEnd' is possibly 'null'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(39,46): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(39,70): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(40,50): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(40,74): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(43,48): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(43,72): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(44,50): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(44,74): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(47,50): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(47,74): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(48,48): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/gantt/presentation/hooks/useGanttTimeline.ts(48,72): error TS2322: Type 'Date | null' is not assignable to type 'DateArg<Date>'.
+  Type 'null' is not assignable to type 'DateArg<Date>'.
+src/features/scurve/domain/accumulation.ts(28,54): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(29,42): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(31,41): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(49,7): error TS2322: Type 'Date | null' is not assignable to type 'Date'.
+  Type 'null' is not assignable to type 'Date'.
+src/features/scurve/domain/accumulation.ts(56,24): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(56,33): error TS2322: Type 'Date | null' is not assignable to type 'Date'.
+  Type 'null' is not assignable to type 'Date'.
+src/features/scurve/domain/accumulation.ts(59,42): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(61,39): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(79,33): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(79,52): error TS2322: Type 'Date | null' is not assignable to type 'Date'.
+  Type 'null' is not assignable to type 'Date'.
+src/features/scurve/domain/accumulation.ts(82,33): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/domain/accumulation.ts(82,52): error TS2322: Type 'Date | null' is not assignable to type 'Date'.
+  Type 'null' is not assignable to type 'Date'.
+src/features/scurve/domain/weighting.ts(14,37): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(97,92): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(110,51): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(116,45): error TS2345: Argument of type '{ start: Date | null; end: Date | null; }' is not assignable to parameter of type '{ start: Date; end: Date; }'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(181,47): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(182,61): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(451,154): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(452,202): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(456,85): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(456,137): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(509,17): error TS2322: Type '{ start: Date | null; end: Date | null; }' is not assignable to type 'DateRange'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(731,37): error TS2322: Type '{ start: Date | null; end: Date | null; }' is not assignable to type '{ start: Date; }'.
+  Types of property 'start' are incompatible.
+    Type 'Date | null' is not assignable to type 'Date'.
+      Type 'null' is not assignable to type 'Date'.

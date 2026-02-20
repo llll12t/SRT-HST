@@ -1,0 +1,7 @@
+src/features/gantt/presentation/components/TaskRow.tsx(171,50): error TS18047: 'd' is possibly 'null'.
+src/features/gantt/presentation/components/TaskRow.tsx(174,33): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(181,47): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
+src/features/scurve/presentation/components/SCurveChart.tsx(182,61): error TS2345: Argument of type 'Date | null' is not assignable to parameter of type 'string | number | Date'.
+  Type 'null' is not assignable to type 'string | number | Date'.
