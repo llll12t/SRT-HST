@@ -4,24 +4,23 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   FolderGit2,
-  TrendingUp,
-  TrendingDown,
-  AlertCircle,
   CheckCircle2,
+  AlertCircle,
   Clock,
   ArrowRight,
-  MoreHorizontal,
   CalendarDays,
   BarChart3,
   GanttChartSquare,
-  Building2
+  Building2,
+  Search,
+  Filter,
+  Target,
+  ShoppingBag
 } from 'lucide-react';
-import { format, parseISO, differenceInDays, isAfter, isBefore, isWithinInterval, addDays } from 'date-fns';
-import { th } from 'date-fns/locale';
+import { format, parseISO, differenceInDays, isAfter, isBefore } from 'date-fns';
 import { Project, Task } from '@/types/construction';
 import { getProjects, getAllTasks } from '@/lib/firestore';
 
-// Helper to reliably parse any date value
 const parseDate = (val: any): Date => {
   if (!val) return new Date();
   if (val instanceof Date) return val;
@@ -34,6 +33,9 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'planning' | 'in-progress' | 'completed' | 'on-hold'>('active');
 
   useEffect(() => {
     const fetchData = async () => {
@@ -54,15 +56,11 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  // --- Calculation Logic ---
-
-  // Calculate Planned Progress % for a specific project AT TODAY
   const calculatePlannedProgress = (projectId: string, projectStart: string, projectEnd: string): number => {
     const projectTasks = tasks.filter(t => t.projectId === projectId);
     if (projectTasks.length === 0) return 0;
 
     const now = new Date();
-    // Use cost weighting if available, else duration
     const useCostWeighting = projectTasks.some(t => (t.cost || 0) > 0);
 
     let totalWeight = 0;
@@ -83,18 +81,11 @@ export default function DashboardPage() {
       }
       totalWeight += weight;
 
-      // Calculate overlap with "Now"
-      // If task finished before now -> 100% of weight
-      // If task hasn't started -> 0%
-      // If in progress -> partial weight
-
       if (isBefore(end, now)) {
         plannedEarnedValue += weight;
       } else if (isAfter(start, now)) {
-        // Not started yet
         plannedEarnedValue += 0;
       } else {
-        // In progress
         const daysToNow = differenceInDays(now, start) + 1;
         const progressRatio = Math.max(0, Math.min(1, daysToNow / duration));
         plannedEarnedValue += (weight * progressRatio);
@@ -104,7 +95,6 @@ export default function DashboardPage() {
     return totalWeight > 0 ? (plannedEarnedValue / totalWeight) * 100 : 0;
   };
 
-  // Calculate Actual Progress % (Current status)
   const calculateActualProgress = (projectId: string): number => {
     const projectTasks = tasks.filter(t => t.projectId === projectId);
     if (projectTasks.length === 0) return 0;
@@ -136,14 +126,12 @@ export default function DashboardPage() {
     return totalWeight > 0 ? (earnedValue / totalWeight) * 100 : 0;
   };
 
-  // Process Projects Data
   const processedProjects = projects.map(project => {
     const planned = calculatePlannedProgress(project.id, project.startDate, project.endDate);
     const actual = calculateActualProgress(project.id);
     const variance = actual - planned;
     const status = variance < -5 ? 'delayed' : variance > 5 ? 'ahead' : 'on-track';
 
-    // Count tasks
     const pTasks = tasks.filter(t => t.projectId === project.id);
     const completedTasks = pTasks.filter(t => t.status === 'completed').length;
 
@@ -160,7 +148,6 @@ export default function DashboardPage() {
     };
   });
 
-  // Global Stats
   const globalStats = {
     total: projects.length,
     delayed: processedProjects.filter(p => p.stats.status === 'delayed').length,
@@ -168,40 +155,29 @@ export default function DashboardPage() {
     completed: projects.filter(p => p.status === 'completed').length
   };
 
-  // Identify Critical Tasks (Across all projects)
-  // Tasks that should be started/done but are behind
   const today = new Date();
   const criticalTasks = tasks
     .filter(t => t.progress < 100)
     .map(t => {
       const planEnd = parseDate(t.planEndDate);
       const planStart = parseDate(t.planStartDate);
-
-      // Calculate delay logic
       let isDelayed = false;
       let delayLabel = '';
 
       if (isBefore(planEnd, today)) {
         isDelayed = true;
-        delayLabel = 'เลยกำหนดส่ง';
+        delayLabel = 'Term Overdue';
       } else if (isBefore(planStart, today) && t.progress === 0) {
         isDelayed = true;
-        delayLabel = 'ยังไม่เริ่มตามแผน';
+        delayLabel = 'Start Delayed';
       }
 
       return { ...t, isDelayed, delayLabel, planEnd };
     })
     .filter(t => t.isDelayed)
-    .sort((a, b) => a.planEnd.getTime() - b.planEnd.getTime()) // Most overdue first
+    .sort((a, b) => a.planEnd.getTime() - b.planEnd.getTime())
     .slice(0, 5);
 
-
-  // Filters
-  const [searchQuery, setSearchQuery] = useState('');
-  // Default to 'active' to show only relevant projects initially
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'planning' | 'in-progress' | 'completed' | 'on-hold'>('active');
-
-  // Filter Projects
   const filteredProjects = processedProjects.filter(project => {
     const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (project.description || '').toLowerCase().includes(searchQuery.toLowerCase());
@@ -210,7 +186,6 @@ export default function DashboardPage() {
     if (statusFilter === 'all') {
       matchesStatus = true;
     } else if (statusFilter === 'active') {
-      // Active = Planning + In Progress
       matchesStatus = ['planning', 'in-progress'].includes(project.status);
     } else {
       matchesStatus = project.status === statusFilter;
@@ -222,126 +197,136 @@ export default function DashboardPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-        <p className="text-gray-600">กำลังประมวลผลข้อมูลโครงการ...</p>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mb-4"></div>
+        <p className="text-gray-500 text-base">Loading Portfolio...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto pb-10">
-
+    <div className="space-y-8 w-full mx-auto min-h-screen text-gray-900 px-6 sm:px-8 lg:px-10 py-8 pb-12 text-sm">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-5 border-b border-gray-200 pb-6">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">ภาพรวมโครงการ (Portfolio Dashboard)</h1>
-          <p className="text-gray-600 text-sm mt-1">
-            สถานะความคืบหน้าของทุกโครงการ ณ วันที่ {format(new Date(), 'd MMMM yyyy', { locale: th })}
-          </p>
+          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Portfolio Dashboard</h1>
+          <p className="text-gray-500 text-sm mt-1">Overview as of {format(new Date(), 'd MMM yyyy, HH:mm')}</p>
         </div>
         <Link
           href="/projects"
-          className="inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-sm text-sm font-medium hover:bg-blue-700 transition-colors shadow-none"
+          className="inline-flex items-center justify-center px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-md hover:bg-gray-800 transition-colors"
         >
           <FolderGit2 className="w-4 h-4 mr-2" />
-          จัดการโครงการ
+          Manage Projects
         </Link>
       </div>
 
-      {/* Overview Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div
-          className={`cursor-pointer p-5 rounded-sm border shadow-none flex items-center justify-between transition-all
-            bg-white border-gray-300 hover:border-blue-500`}
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-600">โครงการทั้งหมด</p>
-            <p className="text-3xl font-bold text-gray-900 mt-1">{globalStats.total}</p>
+      {/* Overview Stats Cards - Colorful */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="p-5 rounded-xl border border-blue-100 bg-blue-50/50 flex flex-col justify-between h-[112px] relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-3 opacity-10">
+            <FolderGit2 className="w-16 h-16 text-blue-600" />
           </div>
-          <div className="w-10 h-10 bg-gray-100 rounded-sm flex items-center justify-center text-gray-600">
-            <FolderGit2 className="w-6 h-6" />
+          <div className="relative z-10 flex justify-between items-start">
+            <p className="text-xs font-bold text-blue-600 uppercase tracking-wider">Total Projects</p>
+            <div className="p-1.5 bg-blue-100 rounded-md">
+              <FolderGit2 className="w-4 h-4 text-blue-600" />
+            </div>
+          </div>
+          <p className="relative z-10 text-3xl font-bold text-gray-900 leading-none">{globalStats.total}</p>
+        </div>
+
+        <div className="p-5 rounded-xl border border-green-100 bg-green-50/50 flex flex-col justify-between h-[112px] relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-3 opacity-10">
+            <CheckCircle2 className="w-16 h-16 text-green-600" />
+          </div>
+          <div className="relative z-10 flex justify-between items-start">
+            <p className="text-xs font-bold text-green-600 uppercase tracking-wider">On Track</p>
+            <div className="p-1.5 bg-green-100 rounded-md">
+              <CheckCircle2 className="w-4 h-4 text-green-600" />
+            </div>
+          </div>
+          <div className="relative z-10 flex items-baseline gap-2">
+            <p className="text-3xl font-bold text-green-700 leading-none">{globalStats.onTrack}</p>
+            <span className="text-xs text-green-600 font-medium">projects</span>
           </div>
         </div>
 
-        <div
-          className="bg-white p-5 rounded-sm border border-gray-300 shadow-none flex items-center justify-between cursor-default"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-600">กำลังดำเนินการ (ตามแผน)</p>
-            <p className="text-3xl font-bold text-green-600 mt-1">{globalStats.onTrack}</p>
+        <div className="p-5 rounded-xl border border-red-100 bg-red-50/50 flex flex-col justify-between h-[112px] relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-3 opacity-10">
+            <AlertCircle className="w-16 h-16 text-red-600" />
           </div>
-          <div className="w-10 h-10 bg-green-50 rounded-sm flex items-center justify-center text-green-600">
-            <CheckCircle2 className="w-6 h-6" />
+          <div className="relative z-10 flex justify-between items-start">
+            <p className="text-xs font-bold text-red-600 uppercase tracking-wider">Delayed</p>
+            <div className="p-1.5 bg-red-100 rounded-md">
+              <AlertCircle className="w-4 h-4 text-red-600" />
+            </div>
           </div>
-        </div>
-
-        <div
-          className="bg-white p-5 rounded-sm border border-gray-300 shadow-none flex items-center justify-between cursor-default"
-        >
-          <div>
-            <p className="text-sm font-medium text-gray-600">ล่าช้ากว่ากำหนด</p>
-            <p className="text-3xl font-bold text-red-600 mt-1">{globalStats.delayed}</p>
-          </div>
-          <div className="w-10 h-10 bg-red-50 rounded-sm flex items-center justify-center text-red-600">
-            <AlertCircle className="w-6 h-6" />
+          <div className="relative z-10 flex items-baseline gap-2">
+            <p className="text-3xl font-bold text-red-700 leading-none">{globalStats.delayed}</p>
+            <span className="text-xs text-red-600 font-medium">projects</span>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-sm border border-gray-300 shadow-none flex items-center justify-between cursor-default">
-          <div>
-            <p className="text-sm font-medium text-gray-600">งานวิกฤต (Critical)</p>
-            <p className="text-3xl font-bold text-amber-600 mt-1">{criticalTasks.length}</p>
+        <div className="p-5 rounded-xl border border-amber-100 bg-amber-50/50 flex flex-col justify-between h-[112px] relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-3 opacity-10">
+            <Clock className="w-16 h-16 text-amber-600" />
           </div>
-          <div className="w-10 h-10 bg-amber-50 rounded-sm flex items-center justify-center text-amber-600">
-            <Clock className="w-6 h-6" />
+          <div className="relative z-10 flex justify-between items-start">
+            <p className="text-xs font-bold text-amber-600 uppercase tracking-wider">Critical Tasks</p>
+            <div className="p-1.5 bg-amber-100 rounded-md">
+              <Clock className="w-4 h-4 text-amber-600" />
+            </div>
+          </div>
+          <div className="relative z-10 flex items-baseline gap-2">
+            <p className="text-3xl font-bold text-amber-700 leading-none">{criticalTasks.length}</p>
+            <span className="text-xs text-amber-600 font-medium">overdue</span>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-
         {/* Main Content: Project List */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-gray-600" />
-              สถานะรายโครงการ
+        <div className="lg:col-span-2 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gray-50/80 p-4 rounded-xl border border-gray-200">
+            <h2 className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-gray-500" />
+              Project Status
             </h2>
 
-            {/* Search & Filter - Matches Projects Page */}
-            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-4 w-4 text-gray-500" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                </div>
+            <div className="flex gap-3 w-full sm:w-auto">
+              <div className="relative flex-1 sm:flex-none">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <input
                   type="text"
-                  placeholder="ค้นหาโครงการ..."
+                  placeholder="Search..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full sm:w-64 pl-9 pr-4 py-1.5 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                  className="w-full sm:w-56 pl-9 pr-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all placeholder:text-gray-400"
                 />
               </div>
 
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-3 py-1.5 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors font-medium text-gray-700"
-              >
-                <option value="active">⚡ ดำเนินการอยู่ (Active)</option>
-                <option value="all">ทั้งหมด (All)</option>
-                <option disabled>──────────</option>
-                <option value="planning">วางแผน</option>
-                <option value="in-progress">กำลังดำเนินการ</option>
-                <option value="on-hold">ระงับชั่วคราว</option>
-                <option value="completed">เสร็จสิ้น</option>
-              </select>
+              <div className="relative">
+                <Filter className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value as any)}
+                  className="pl-9 pr-8 py-2 bg-white border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-100 focus:border-blue-400 outline-none transition-all font-medium text-gray-600 cursor-pointer hover:bg-gray-50 appearance-none"
+                >
+                  <option value="active">Active Projects</option>
+                  <option value="all">All Projects</option>
+                  <option disabled>----------</option>
+                  <option value="planning">Planning</option>
+                  <option value="in-progress">In Progress</option>
+                  <option value="on-hold">On Hold</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
             </div>
           </div>
 
           {filteredProjects.length === 0 ? (
-            <div className="text-center py-10 bg-gray-50 rounded-sm border border-dashed border-gray-300">
-              <p className="text-gray-600">ไม่พบโครงการในหมวดหมู่นี้</p>
+            <div className="text-center py-14 border border-dashed border-gray-300 rounded-xl">
+              <p className="text-gray-500 text-sm">No projects match criteria.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -352,102 +337,101 @@ export default function DashboardPage() {
                 return (
                   <div
                     key={project.id}
-                    className={`
-                      rounded-sm border border-gray-300 shadow-none hover:border-gray-400 transition-all p-4 relative overflow-hidden group
-                      ${isCompleted ? 'bg-green-50/30 border-green-200' :
-                        isOnHold ? 'bg-amber-50/30 border-amber-200 opacity-90' :
-                          'bg-white border-gray-300'}
-                    `}
+                    className={`group rounded-xl border p-6 transition-all hover:shadow-md bg-white
+                                            ${isCompleted ? 'border-green-200 bg-green-50/5' :
+                        isOnHold ? 'border-amber-200 bg-amber-50/5' :
+                          'border-gray-200 hover:border-blue-300'}
+                                        `}
                   >
-                    {isCompleted && (
-                      <div className="absolute right-0 top-0 w-16 h-16 overflow-hidden pointer-events-none">
-                        <div className="absolute top-[8px] right-[-25px] w-[90px] h-[25px] bg-green-500/10 -rotate-45 transform" />
-                      </div>
-                    )}
-
-                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-3 relative z-10">
-                      <div>
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <h3 className={`font-bold text-base ${isCompleted ? 'text-green-900' : 'text-gray-900'}`}>
+                    <div className="flex justify-between items-start mb-5">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2.5">
+                          <h3 className="font-semibold text-lg text-gray-900 group-hover:text-blue-700 transition-colors">
                             {project.name}
                           </h3>
-                          {isCompleted && <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] rounded-sm border border-green-200 font-medium">เสร็จสิ้น</span>}
-                          {isOnHold && <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-[10px] rounded-sm border border-amber-200 font-medium">ระงับชั่วคราว</span>}
+                          {isCompleted && <span className="px-2.5 py-0.5 bg-green-100 text-green-700 text-xs uppercase font-bold tracking-wide rounded-full">Completed</span>}
+                          {isOnHold && <span className="px-2.5 py-0.5 bg-amber-100 text-amber-700 text-xs uppercase font-bold tracking-wide rounded-full">On Hold</span>}
                         </div>
-                        <p className="text-xs text-gray-600 flex items-center gap-1.5">
-                          <CalendarDays className="w-3 h-3" />
-                          {format(parseDate(project.startDate), 'd MMM yy', { locale: th })} - {format(parseDate(project.endDate), 'd MMM yy', { locale: th })}
-                        </p>
-                      </div>
-
-                      <div className={`px-2.5 py-1 rounded-sm text-xs font-medium flex items-center gap-1.5 self-start
-                                      ${project.stats.status === 'delayed' && !isCompleted ? 'bg-red-50 text-red-700' :
-                          project.stats.status === 'ahead' || isCompleted ? 'bg-green-50 text-green-700' :
-                            'bg-blue-50 text-blue-700'}`}>
-                        {project.stats.status === 'delayed' && !isCompleted ? <TrendingDown className="w-3.5 h-3.5" /> :
-                          project.stats.status === 'ahead' || isCompleted ? <TrendingUp className="w-3.5 h-3.5" /> : <div className="w-3.5 h-3.5 bg-blue-500 rounded-sm scale-50" />}
-
-                        {isCompleted ? 'เสร็จสมบูรณ์' :
-                          isOnHold ? 'ระงับชั่วคราว' :
-                            project.stats.status === 'delayed' ? 'ล่าช้า' :
-                              project.stats.status === 'ahead' ? 'เร็วกว่าแผน' : 'ตรงตามแผน'}
-
-                        {!isCompleted && !isOnHold && (
-                          <span className="opacity-75 text-[10px] ml-0.5">
-                            ({project.stats.variance > 0 ? '+' : ''}{project.stats.variance.toFixed(1)}%)
+                        <div className="flex items-center gap-5 text-sm text-gray-500">
+                          <span className="flex items-center gap-1.5 bg-gray-50 px-2.5 py-1 rounded text-gray-600">
+                            <CalendarDays className="w-3.5 h-3.5" />
+                            {format(parseDate(project.startDate), 'MMM d')} - {format(parseDate(project.endDate), 'MMM d, yy')}
                           </span>
-                        )}
+                          <span className="text-gray-300">|</span>
+                          <div className={`flex items-center gap-1.5 font-bold
+                                                        ${project.stats.status === 'delayed' && !isCompleted ? 'text-red-600' :
+                              project.stats.status === 'ahead' || isCompleted ? 'text-green-600' :
+                                'text-blue-600'}`}>
+                            {project.stats.status === 'delayed' && !isCompleted ? 'Delayed' :
+                              project.stats.status === 'ahead' || isCompleted ? 'Ahead' : 'On Track'}
+                            {!isCompleted && !isOnHold && (
+                              <span className="text-xs font-medium opacity-80 bg-opacity-20 px-1.5 py-0.5 rounded ml-1 bg-current">
+                                {project.stats.variance > 0 ? '+' : ''}{project.stats.variance.toFixed(1)}%
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
+
+                      <Link href={`/projects/${project.id}`} className="flex items-center justify-center w-9 h-9 text-gray-400 hover:text-white hover:bg-blue-600 rounded-full transition-all">
+                        <ArrowRight className="w-5 h-5" />
+                      </Link>
                     </div>
 
-                    {/* Progress Bars - Compact */}
-                    <div className="space-y-2 mb-3 relative z-10">
+                    {/* Progress Bars - Updated Aesthetics */}
+                    <div className="grid grid-cols-2 gap-7 mb-6">
                       <div>
-                        <div className="flex justify-between text-xs mb-0.5">
-                          <span className="text-gray-600">Plan (แผนงาน)</span>
-                          <span className="font-semibold text-gray-800">
-                            {isCompleted ? '100.00' : project.stats.planned.toFixed(2)}%
-                          </span>
+                        <div className="flex justify-between text-xs mb-2.5 text-gray-500 uppercase tracking-wider font-semibold">
+                          <span className="flex items-center gap-1.5"><div className="w-2 h-2 rounded-full bg-blue-500"></div> Plan</span>
+                          <span className="text-gray-700">{isCompleted ? '100%' : project.stats.planned.toFixed(1) + '%'}</span>
                         </div>
-                        <div className="h-1.5 w-full bg-gray-100 rounded-sm overflow-hidden">
+                        <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-sm ${isCompleted ? 'bg-green-400' : 'bg-blue-400'}`}
+                            className={`h-full rounded-full ${isCompleted ? 'bg-green-500' : 'bg-blue-500'}`}
                             style={{ width: `${isCompleted ? 100 : project.stats.planned}%` }}
                           ></div>
                         </div>
                       </div>
                       <div>
-                        <div className="flex justify-between text-xs mb-0.5">
-                          <span className="text-gray-600">Actual (ผลงาน)</span>
-                          <span className={`font-semibold ${project.stats.status === 'delayed' && !isCompleted ? 'text-red-600' : 'text-green-600'}`}>
-                            {isCompleted ? '100.00' : project.stats.actual.toFixed(2)}%
+                        <div className="flex justify-between text-xs mb-2.5 text-gray-500 uppercase tracking-wider font-semibold">
+                          <span className="flex items-center gap-1.5">
+                            <div className={`w-2 h-2 rounded-full ${project.stats.status === 'delayed' ? 'bg-red-500' : 'bg-green-500'}`}></div>
+                            Actual
+                          </span>
+                          <span className={`${project.stats.status === 'delayed' ? 'text-red-600' : 'text-green-600'}`}>
+                            {isCompleted ? '100%' : project.stats.actual.toFixed(1) + '%'}
                           </span>
                         </div>
-                        <div className="h-1.5 w-full bg-gray-100 rounded-sm overflow-hidden">
+                        <div className="h-1 w-full bg-gray-100 rounded-full overflow-hidden">
                           <div
-                            className={`h-full rounded-sm ${project.stats.status === 'delayed' && !isCompleted ? 'bg-red-500' : 'bg-green-500'}`}
+                            className={`h-full rounded-full ${project.stats.status === 'delayed' && !isCompleted ? 'bg-red-500' : 'bg-green-500'}`}
                             style={{ width: `${isCompleted ? 100 : project.stats.actual}%` }}
                           ></div>
                         </div>
                       </div>
                     </div>
 
-                    {/* Footer Actions - Compact */}
-                    <div className="flex items-center justify-between pt-3 border-t border-gray-100 relative z-10">
-                      <div className="text-xs text-gray-500">
+                    {/* Quick Links Footer - Colorful buttons */}
+                    <div className="flex items-center gap-2.5 pt-5 border-t border-gray-100 flex-wrap">
+                      <Link href={`/gantt/${project.id}`} className="group flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-blue-50 hover:text-blue-700 rounded-md transition-all border border-gray-200 hover:border-blue-200">
+                        <GanttChartSquare className="w-4 h-4 text-gray-400 group-hover:text-blue-500" /> Gantt
+                      </Link>
+                      <Link href={`/scurve/${project.id}`} className="group flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-indigo-50 hover:text-indigo-700 rounded-md transition-all border border-gray-200 hover:border-indigo-200">
+                        <BarChart3 className="w-4 h-4 text-gray-400 group-hover:text-indigo-500" /> S-Curve
+                      </Link>
+                      <Link href={`/gantt-4w/${project.id}`} className="group flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-purple-50 hover:text-purple-700 rounded-md transition-all border border-gray-200 hover:border-purple-200">
+                        <CalendarDays className="w-4 h-4 text-gray-400 group-hover:text-purple-500" /> 4-Week
+                      </Link>
+                      <Link href={`/cost-code/${project.id}`} className="group flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-emerald-50 hover:text-emerald-700 rounded-md transition-all border border-gray-200 hover:border-emerald-200">
+                        <Target className="w-4 h-4 text-gray-400 group-hover:text-emerald-500" /> Cost
+                      </Link>
+                      <Link href={`/procurement/${project.id}`} className="group flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-gray-600 bg-gray-50 hover:bg-amber-50 hover:text-amber-700 rounded-md transition-all border border-gray-200 hover:border-amber-200">
+                        <ShoppingBag className="w-4 h-4 text-gray-400 group-hover:text-amber-500" /> Procure
+                      </Link>
+
+                      <span className="ml-auto text-sm font-medium text-gray-400 bg-gray-50 px-2.5 py-1.5 rounded-md">
                         {project.stats.completedTasks} / {project.stats.totalTasks} tasks
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Link href={`/s-curve?project=${project.id}`} className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors px-1.5 py-1 hover:bg-gray-50 rounded-sm">
-                          <BarChart3 className="w-3.5 h-3.5" /> S-Curve
-                        </Link>
-                        <Link href={`/gantt?projectId=${project.id}`} className="text-xs text-gray-600 hover:text-blue-600 flex items-center gap-1 transition-colors px-1.5 py-1 hover:bg-gray-50 rounded-sm">
-                          <GanttChartSquare className="w-3.5 h-3.5" /> Gantt
-                        </Link>
-                        <Link href={`/projects/${project.id}`} className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-0.5 transition-colors ml-1">
-                          รายละเอียด <ArrowRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </div>
+                      </span>
                     </div>
                   </div>
                 );
@@ -456,63 +440,82 @@ export default function DashboardPage() {
           )}
         </div>
 
-        {/* Right Sidebar: Critical Tasks */}
-        <div className="space-y-6">
-          {/* Critical Tasks Card */}
-          <div className="bg-white rounded-sm border border-gray-300 shadow-none p-5">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-red-500" />
-              งานที่ต้องเร่งแก้ไข
-            </h3>
+        {/* Right Sidebar: Critical Tasks & Summary */}
+        <div className="space-y-5">
+          {/* Critical Tasks Panel */}
+          <div className="bg-white rounded-xl border border-red-100 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3.5 bg-red-50/50 border-b border-red-100">
+              <AlertCircle className="w-4 h-4 text-red-600" />
+              <h3 className="font-bold text-sm text-red-900">Action Required</h3>
+            </div>
 
-            {criticalTasks.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 text-center">
-                <CheckCircle2 className="w-10 h-10 text-green-100 mb-2" />
-                <p className="text-sm text-gray-600">ยอดเยี่ยม! ไม่มีงานล่าช้า</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {criticalTasks.map(task => {
-                  const project = projects.find(p => p.id === task.projectId);
-                  return (
-                    <div key={task.id} className="p-3 bg-red-50 rounded-sm border border-red-200">
-                      <div className="flex items-start justify-between mb-1">
-                        <span className="text-xs font-semibold text-red-600 px-1.5 py-0.5 bg-white rounded-sm border border-red-200">
-                          {task.delayLabel}
-                        </span>
-                        <span className="text-xs text-red-500">{project?.name.substring(0, 15)}...</span>
+            <div className="p-5">
+              {criticalTasks.length === 0 ? (
+                <div className="py-7 text-center">
+                  <CheckCircle2 className="w-8 h-8 text-green-100 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">No critical delays.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {criticalTasks.map(task => {
+                    const project = projects.find(p => p.id === task.projectId);
+                    return (
+                      <div key={task.id} className="group p-4 bg-white rounded-lg border border-red-100 hover:border-red-300 hover:shadow-sm transition-all relative">
+                        <div className="absolute left-0 top-0 bottom-0 bg-red-500 rounded-l-md"></div>
+                        <div className="pl-3">
+                          <div className="flex justify-between items-start mb-2">
+                            <span className="text-[11px] font-bold text-red-600 bg-red-50 px-2 py-0.5 rounded-full uppercase tracking-wide border border-red-100">
+                              {task.delayLabel}
+                            </span>
+                            <span className="text-sm text-gray-400 font-medium truncate max-w-[120px]">
+                              {project?.name}
+                            </span>
+                          </div>
+                          <p className="text-sm font-semibold text-gray-800 mb-1.5 line-clamp-1 group-hover:text-red-700 transition-colors">{task.name}</p>
+                          <div className="flex justify-between text-sm text-gray-500 font-medium">
+                            <span>Due: {format(parseDate(task.planEndDate), 'MMM d')}</span>
+                            <span className="text-red-600">{task.progress}% done</span>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-sm font-medium text-gray-900 line-clamp-2 mb-1">{task.name}</p>
-                      <div className="flex items-center justify-between text-xs text-gray-600">
-                        <span>กำหนดส่ง: {format(parseDate(task.planEndDate), 'd MMM')}</span>
-                        <span>คืบหน้า: {task.progress}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
 
-            {criticalTasks.length > 0 && (
-              <Link href="/tasks" className="block text-center text-sm text-gray-600 hover:text-gray-900 mt-4 pt-4 border-t border-gray-100">
-                ดูงานทั้งหมด
-              </Link>
-            )}
-          </div>
-
-          {/* Weather / Info Widget (Optional filler) */}
-          <div className="bg-gradient-to-br from-blue-600 to-indigo-700 rounded-sm shadow-none p-5 text-white">
-            <h3 className="font-semibold text-lg mb-2">สรุปประจำวัน</h3>
-            <p className="text-blue-100 text-sm mb-4">
-              วันนี้มีโครงการที่กำลังดำเนินการ {globalStats.onTrack + globalStats.delayed} โครงการ
-              โดยมี {globalStats.delayed} โครงการที่ต้องดูแลเป็นพิเศษ
-            </p>
-            <div className="flex items-center gap-2 text-xs font-medium bg-white/20 px-3 py-2 rounded-sm self-start inline-flex backdrop-blur-sm">
-              <Clock className="w-4 h-4" />
-              อัปเดตข้อมูลล่าสุด: {format(new Date(), 'HH:mm')} น.
+              {criticalTasks.length > 0 && (
+                <div className="mt-5 pt-4 text-center border-t border-gray-100">
+                  <Link href="#" className="text-sm font-semibold text-red-600 hover:text-red-700 hover:underline">View all critical items</Link>
+                </div>
+              )}
             </div>
           </div>
 
+          {/* Daily Brief */}
+          <div className="bg-slate-900 rounded-xl p-6 text-white shadow-lg relative overflow-hidden">
+            {/* Abstract Background Decoration */}
+            <div className="absolute top-0 right-0 -mt-2 -mr-2 w-20 h-20 bg-blue-500 rounded-full opacity-10 blur-xl"></div>
+            <div className="absolute bottom-0 left-0 -mb-2 -ml-2 w-16 h-16 bg-purple-500 rounded-full opacity-10 blur-xl"></div>
+
+            <div className="relative z-10">
+              <div className="flex items-center gap-2 mb-4 text-blue-300">
+                <Clock className="w-4 h-4" />
+                <span className="text-sm font-bold uppercase tracking-wider">Daily Brief</span>
+              </div>
+              <p className="text-sm text-slate-300 leading-relaxed mb-5">
+                You have <span className="text-white font-bold">{globalStats.onTrack + globalStats.delayed} active projects</span>.
+                <br />
+                <span className={globalStats.delayed > 0 ? "text-red-300 font-medium" : "text-green-300 font-medium"}>
+                  {globalStats.delayed} project{globalStats.delayed !== 1 && 's'} requiring attention.
+                </span>
+              </p>
+              <div className="h-px bg-slate-700/50 my-4"></div>
+              <div className="flex justify-between text-sm text-slate-400">
+                <span className="flex items-center gap-1.5"><div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></div> System Online</span>
+                <span>v2.1.0</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div >

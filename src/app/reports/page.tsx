@@ -2,27 +2,35 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-    FileSpreadsheet,
     Download,
     Calendar,
     FileText,
     BarChart3,
     TrendingUp,
-    Clock,
     Loader2,
-    ChevronRight,
     CheckCircle2,
     AlertCircle,
-    ArrowUpRight,
-    ArrowDownRight,
     Building2,
-    PieChart,
     Printer,
     Filter
 } from 'lucide-react';
 import { Project, Task } from '@/types/construction';
-import { getProjects, getAllTasks, getTasks } from '@/lib/firestore';
-import { format, addDays, isWithinInterval, isBefore, isAfter, differenceInDays } from 'date-fns';
+import { getProjects, getAllTasks } from '@/lib/firestore';
+import {
+    format,
+    addDays,
+    isBefore,
+    isAfter,
+    isValid,
+    parseISO,
+    startOfDay,
+    endOfDay,
+    startOfMonth,
+    endOfMonth,
+    eachMonthOfInterval,
+    differenceInDays,
+    differenceInCalendarDays
+} from 'date-fns';
 import { th } from 'date-fns/locale';
 
 // --- Report Types & Tabs ---
@@ -64,39 +72,163 @@ export default function ReportsPage() {
     }, []);
 
     // --- Data Processing Helpers ---
+    const isLeafTask = (task: Task) => task.type !== 'group';
 
-    // 1. Portfolio Calculate
+    const getBudget = (project: Project): number => {
+        const withBudget = project as Project & { budget?: number };
+        return Number(withBudget.budget || 0);
+    };
+
+    const parseSafeDate = (value?: string) => {
+        if (!value) return null;
+        const parsed = parseISO(value);
+        return isValid(parsed) ? parsed : null;
+    };
+
+    const getTaskWindow = (task: Task) => {
+        const start = parseSafeDate(task.planStartDate);
+        const end = parseSafeDate(task.planEndDate);
+        if (!start || !end) return null;
+        return {
+            start: startOfDay(start),
+            end: endOfDay(end)
+        };
+    };
+
+    const getTaskWeight = (task: Task) => {
+        const costWeight = Number(task.cost || 0);
+        if (costWeight > 0) return costWeight;
+        return Math.max(1, Number(task.planDuration) || 1);
+    };
+
+    const clampProgress = (value?: number) => Math.max(0, Math.min(100, Number(value) || 0));
+
+    const getProjectLeafTasks = (projectId: string) => allTasks.filter((task) => task.projectId === projectId && isLeafTask(task));
+
+    const calculatePlanProgressAtDate = (tasks: Task[], referenceDate: Date) => {
+        if (tasks.length === 0) return 0;
+
+        const targetDate = endOfDay(referenceDate);
+        let totalWeight = 0;
+        let earnedWeight = 0;
+
+        tasks.forEach((task) => {
+            const window = getTaskWindow(task);
+            if (!window) return;
+
+            const weight = getTaskWeight(task);
+            totalWeight += weight;
+
+            if (isBefore(targetDate, window.start)) return;
+
+            if (!isBefore(targetDate, window.end)) {
+                earnedWeight += weight;
+                return;
+            }
+
+            const totalDuration = Math.max(1, differenceInDays(window.end, window.start) + 1);
+            const elapsed = Math.max(0, differenceInDays(targetDate, window.start) + 1);
+            const ratio = Math.max(0, Math.min(1, elapsed / totalDuration));
+            earnedWeight += weight * ratio;
+        });
+
+        return totalWeight > 0 ? (earnedWeight / totalWeight) * 100 : 0;
+    };
+
+    const getTaskProgressAtDate = (task: Task, referenceDate: Date) => {
+        const targetDate = endOfDay(referenceDate);
+        const progressDate = parseSafeDate(task.progressUpdatedAt);
+        const actualStart = parseSafeDate(task.actualStartDate);
+
+        if (progressDate && isBefore(targetDate, startOfDay(progressDate))) return 0;
+        if (!progressDate && actualStart && isBefore(targetDate, startOfDay(actualStart))) return 0;
+
+        return clampProgress(task.progress);
+    };
+
+    const calculateActualProgressAtDate = (tasks: Task[], referenceDate: Date) => {
+        if (tasks.length === 0) return 0;
+
+        let totalWeight = 0;
+        let earnedWeight = 0;
+
+        tasks.forEach((task) => {
+            const window = getTaskWindow(task);
+            if (!window) return;
+
+            const weight = getTaskWeight(task);
+            totalWeight += weight;
+            earnedWeight += (weight * getTaskProgressAtDate(task, referenceDate)) / 100;
+        });
+
+        return totalWeight > 0 ? (earnedWeight / totalWeight) * 100 : 0;
+    };
+
+    const calculatePlanProgress = (tasks: Task[]) => calculatePlanProgressAtDate(tasks, new Date());
+    const calculateActualProgress = (tasks: Task[]) => calculateActualProgressAtDate(tasks, new Date());
+
+    const calculateDelayDays = (planEndDate: string) => {
+        const endDate = parseSafeDate(planEndDate);
+        if (!endDate) return 0;
+        return Math.max(0, differenceInCalendarDays(startOfDay(new Date()), startOfDay(endDate)));
+    };
+
+    const getMonthlyProgressRows = (project: Project | undefined, tasks: Task[]) => {
+        if (!project || tasks.length === 0) return [];
+
+        const projectStart = parseSafeDate(project.startDate);
+        const projectEnd = parseSafeDate(project.endDate);
+        if (!projectStart || !projectEnd) return [];
+
+        const today = new Date();
+        const intervalStart = startOfMonth(projectStart);
+        const intervalEndCandidate = endOfMonth(projectEnd);
+        const currentMonthEnd = endOfMonth(today);
+        const intervalEnd = isBefore(intervalEndCandidate, currentMonthEnd) ? intervalEndCandidate : currentMonthEnd;
+
+        if (isAfter(intervalStart, intervalEnd)) return [];
+
+        return eachMonthOfInterval({ start: intervalStart, end: intervalEnd }).map((monthStartDate) => {
+            const monthEndDate = endOfMonth(monthStartDate);
+            const referenceDate = isAfter(monthEndDate, today) ? today : monthEndDate;
+            const monthKey = format(monthStartDate, 'yyyy-MM');
+            return {
+                monthKey,
+                label: format(monthStartDate, 'MMMM yyyy', { locale: th }),
+                planProgress: calculatePlanProgressAtDate(tasks, referenceDate),
+                actualProgress: calculateActualProgressAtDate(tasks, referenceDate),
+                isCurrent: monthKey === format(today, 'yyyy-MM')
+            };
+        });
+    };
+
     const getPortfolioStats = () => {
-        return projects.map(p => {
-            const pTasks = allTasks.filter(t => t.projectId === p.id);
-            const totalTasks = pTasks.length;
-            const completedTasks = pTasks.filter(t => t.status === 'completed').length;
-
-            // Calc variance (Simple mock based on progress vs time elapsed or existing data)
-            // Real logic: Actual % - Plan %
-            // We use 'overallProgress' from project as Actual. 
-            // Plan % needs calculation. Simplified:
-            const planProgress = calculatePlanProgress(pTasks);
-            const actualProgress = p.overallProgress || 0;
+        return projects.map((project) => {
+            const projectTasks = getProjectLeafTasks(project.id);
+            const totalTasks = projectTasks.length;
+            const completedTasks = projectTasks.filter((task) => task.status === 'completed').length;
+            const planProgress = calculatePlanProgress(projectTasks);
+            const actualProgress = totalTasks > 0 ? calculateActualProgress(projectTasks) : Number(project.overallProgress || 0);
             const variance = actualProgress - planProgress;
 
-            let statusColor = 'bg-green-100 text-green-700'; // On Track
-            let statusText = 'ปกติ (On Track)';
+            let statusColor = 'bg-green-100 text-green-700';
+            let statusText = 'On Track';
 
             if (variance < -10) {
                 statusColor = 'bg-red-100 text-red-700';
-                statusText = 'ล่าช้าวิกฤต (Critical)';
+                statusText = 'Critical Delay';
             } else if (variance < -5) {
                 statusColor = 'bg-amber-100 text-amber-700';
-                statusText = 'ล่าช้า (Delayed)';
+                statusText = 'Delayed';
             } else if (variance > 5) {
                 statusColor = 'bg-blue-100 text-blue-700';
-                statusText = 'เร็วกว่าแผน (Ahead)';
+                statusText = 'Ahead of Plan';
             }
 
             return {
-                ...p,
+                ...project,
                 planProgress,
+                actualProgress,
                 variance,
                 statusColor,
                 statusText,
@@ -106,69 +238,44 @@ export default function ReportsPage() {
         });
     };
 
-    const calculatePlanProgress = (tasks: Task[]) => {
-        if (tasks.length === 0) return 0;
-        const now = new Date();
-        let totalWeight = 0;
-        let earnedWeight = 0;
-
-        tasks.forEach(t => {
-            // Unweighted: use duration as weight
-            // Weighted: use cost
-            const weight = t.cost || t.planDuration || 1;
-            totalWeight += weight;
-
-            const start = new Date(t.planStartDate);
-            const end = new Date(t.planEndDate);
-
-            if (isAfter(now, end)) {
-                earnedWeight += weight;
-            } else if (isBefore(now, start)) {
-                earnedWeight += 0;
-            } else {
-                const totalDuration = differenceInDays(end, start) + 1;
-                const elapsed = differenceInDays(now, start) + 1;
-                const ratio = Math.max(0, Math.min(1, elapsed / totalDuration));
-                earnedWeight += weight * ratio;
-            }
-        });
-
-        return totalWeight > 0 ? (earnedWeight / totalWeight) * 100 : 0;
-    };
-
-
-    // 2. Lookahead Logic
     const getLookaheadTasks = (days: number) => {
         if (!selectedProjectId) return [];
-        const now = new Date();
-        const futureDate = addDays(now, days);
+        const rangeStart = startOfDay(new Date());
+        const rangeEnd = endOfDay(addDays(rangeStart, days));
 
-        return allTasks
-            .filter(t => t.projectId === selectedProjectId && t.status !== 'completed')
-            .filter(t => {
-                const start = new Date(t.planStartDate);
-                // Task starting within range OR active within range
-                return isWithinInterval(start, { start: now, end: futureDate }) ||
-                    (isBefore(start, now) && isAfter(new Date(t.planEndDate), now));
+        return getProjectLeafTasks(selectedProjectId)
+            .filter((task) => task.status !== 'completed')
+            .filter((task) => {
+                const window = getTaskWindow(task);
+                if (!window) return false;
+                if (isBefore(window.end, rangeStart)) return false;
+                if (isAfter(window.start, rangeEnd)) return false;
+                return true;
             })
-            .sort((a, b) => new Date(a.planStartDate).getTime() - new Date(b.planStartDate).getTime());
+            .sort((a, b) => {
+                const startA = parseSafeDate(a.planStartDate);
+                const startB = parseSafeDate(b.planStartDate);
+                return (startA?.getTime() || 0) - (startB?.getTime() || 0);
+            });
     };
 
-    // 3. Delayed Tasks
     const getDelayedTasks = () => {
         if (!selectedProjectId) return [];
-        const now = new Date();
+        const todayStart = startOfDay(new Date());
 
-        return allTasks
-            .filter(t => t.projectId === selectedProjectId && t.status !== 'completed')
-            .filter(t => {
-                const end = new Date(t.planEndDate);
-                return isBefore(end, now); // Should be done but not marked completed
+        return getProjectLeafTasks(selectedProjectId)
+            .filter((task) => task.status !== 'completed')
+            .filter((task) => {
+                const window = getTaskWindow(task);
+                if (!window) return false;
+                return isBefore(window.end, todayStart);
             });
     };
 
 
     // --- Export & Print Logic ---
+
+    const toCsvCell = (value: string | number) => `"${String(value).replace(/"/g, '""')}"`;
 
     const handleExportExcel = () => {
         let csvContent = "";
@@ -178,23 +285,81 @@ export default function ReportsPage() {
         if (activeTab === 'portfolio') {
             const data = getPortfolioStats();
             fileName = `Portfolio_Report_${today}.csv`;
-            csvContent += "ลำดับ,ชื่อโครงการ,เจ้าของโครงการ,แผนงานสะสม(%),ผลงานจริง(%),Variance(%),สถานะ,วันสิ้นสุดสัญญา\n";
+            csvContent += "No,Project,Owner,Planned(%),Actual(%),Variance(%),Status,Contract End Date\n";
             data.forEach((p, idx) => {
-                csvContent += `${idx + 1},"${p.name}","${p.owner}",${p.planProgress.toFixed(2)},${p.overallProgress.toFixed(2)},${p.variance.toFixed(2)},"${p.statusText}",${format(new Date(p.endDate), 'dd/MM/yyyy')}\n`;
+                csvContent += [
+                    idx + 1,
+                    toCsvCell(p.name),
+                    toCsvCell(p.owner),
+                    p.planProgress.toFixed(2),
+                    p.actualProgress.toFixed(2),
+                    p.variance.toFixed(2),
+                    toCsvCell(p.statusText),
+                    toCsvCell(format(new Date(p.endDate), 'dd/MM/yyyy'))
+                ].join(',') + '\n';
             });
         } else if (activeTab === 'performance' && selectedProjectId) {
+            const selectedProject = projects.find((project) => project.id === selectedProjectId);
+            if (!selectedProject) {
+                alert('Project not found');
+                return;
+            }
+
+            const projectTasks = getProjectLeafTasks(selectedProjectId);
+            const monthlyRows = getMonthlyProgressRows(selectedProject, projectTasks);
+            const actualProgress = projectTasks.length > 0 ? calculateActualProgress(projectTasks) : Number(selectedProject.overallProgress || 0);
+            const planProgress = calculatePlanProgress(projectTasks);
+
             fileName = `Performance_Report_${selectedProjectId}_${today}.csv`;
-            csvContent += "รายงานรายละเอียดอยู่ระหว่างการพัฒนา\n";
-            // In real app, export detailed S-curve data here
+            csvContent += `Project,${toCsvCell(selectedProject.name)}\n`;
+            csvContent += `Owner,${toCsvCell(selectedProject.owner)}\n`;
+            csvContent += `Actual Progress (%),${actualProgress.toFixed(2)}\n`;
+            csvContent += `Planned Progress (%),${planProgress.toFixed(2)}\n`;
+            csvContent += `Variance (%),${(actualProgress - planProgress).toFixed(2)}\n`;
+            csvContent += `Generated At,${toCsvCell(format(new Date(), 'dd/MM/yyyy HH:mm'))}\n\n`;
+
+            csvContent += "Monthly Progress\n";
+            csvContent += "Month,Planned(%),Actual(%)\n";
+            monthlyRows.forEach((row) => {
+                csvContent += `${toCsvCell(row.label)},${row.planProgress.toFixed(2)},${row.actualProgress.toFixed(2)}\n`;
+            });
+
+            csvContent += "\nTask Details\n";
+            csvContent += "Category,Task,Plan Start,Plan End,Plan Duration (days),Progress(%),Status\n";
+            projectTasks
+                .slice()
+                .sort((a, b) => {
+                    const dateA = parseSafeDate(a.planStartDate);
+                    const dateB = parseSafeDate(b.planStartDate);
+                    return (dateA?.getTime() || 0) - (dateB?.getTime() || 0);
+                })
+                .forEach((task) => {
+                    csvContent += [
+                        toCsvCell(task.category || '-'),
+                        toCsvCell(task.name),
+                        toCsvCell(task.planStartDate || '-'),
+                        toCsvCell(task.planEndDate || '-'),
+                        task.planDuration || 0,
+                        clampProgress(task.progress).toFixed(2),
+                        toCsvCell(task.status || '-')
+                    ].join(',') + '\n';
+                });
         } else if (activeTab === 'lookahead') {
             const data = getLookaheadTasks(30);
             fileName = `Lookahead_30Days_${today}.csv`;
-            csvContent += "วันที่เริ่ม,กิจกรรม,หมวดหมู่,ระยะเวลา(วัน),ปริมาณงาน\n";
-            data.forEach(t => {
-                csvContent += `${format(new Date(t.planStartDate), 'dd/MM/yyyy')},"${t.name}","${t.category}",${t.planDuration || 1},"${t.quantity || ''}"\n`;
+            csvContent += "Start Date,Task,Category,Duration (days),Quantity,Status\n";
+            data.forEach((task) => {
+                csvContent += [
+                    toCsvCell(format(new Date(task.planStartDate), 'dd/MM/yyyy')),
+                    toCsvCell(task.name),
+                    toCsvCell(task.category),
+                    task.planDuration || 1,
+                    toCsvCell(task.quantity || ''),
+                    toCsvCell(task.status)
+                ].join(',') + '\n';
             });
         } else {
-            alert('กรุณาเลือก Tab ที่ต้องการ Export');
+            alert('Please select a report tab before export');
             return;
         }
 
@@ -219,6 +384,11 @@ export default function ReportsPage() {
     const portfolioData = getPortfolioStats();
 
     const selectedProjectData = projects.find(p => p.id === selectedProjectId);
+    const selectedProjectTasks = selectedProjectData ? getProjectLeafTasks(selectedProjectData.id) : [];
+    const selectedProjectActualProgress = selectedProjectTasks.length > 0
+        ? calculateActualProgress(selectedProjectTasks)
+        : Number(selectedProjectData?.overallProgress || 0);
+    const monthlyProgressRows = getMonthlyProgressRows(selectedProjectData, selectedProjectTasks);
     const lookaheadTasks = getLookaheadTasks(30);
     const delayedTasks = getDelayedTasks();
 
@@ -430,14 +600,14 @@ export default function ReportsPage() {
                                             <tr key={project.id} className="hover:bg-gray-50/50 transition-colors">
                                                 <td className="px-6 py-4 font-medium text-gray-900">
                                                     {project.name}
-                                                    <div className="text-xs text-gray-400 font-normal mt-0.5">{(project as any).code || '-'}</div>
+                                                    <div className="text-xs text-gray-400 font-normal mt-0.5">{project.code || '-'}</div>
                                                 </td>
                                                 <td className="px-6 py-4 text-gray-600">{project.owner}</td>
                                                 <td className="px-6 py-4 text-center font-medium text-gray-600">
                                                     {project.planProgress.toFixed(2)}%
                                                 </td>
                                                 <td className="px-6 py-4 text-center font-bold text-gray-900">
-                                                    {project.overallProgress.toFixed(2)}%
+                                                    {project.actualProgress.toFixed(2)}%
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <span className={`inline-flex items-center px-2 py-1 rounded-sm text-xs font-semibold
@@ -479,7 +649,7 @@ export default function ReportsPage() {
                             <div className="bg-white p-6 rounded-sm border border-gray-300 shadow-none">
                                 <h4 className="text-sm font-semibold text-gray-500 mb-2">มูลค่ารวม (Budget)</h4>
                                 <div className="text-3xl font-bold text-gray-900">
-                                    {projects.reduce((sum, p) => sum + ((p as any).budget || 0), 0).toLocaleString()} <span className="text-sm font-normal text-gray-500">บาท</span>
+                                    {projects.reduce((sum, p) => sum + getBudget(p), 0).toLocaleString()} <span className="text-sm font-normal text-gray-500">บาท</span>
                                 </div>
                             </div>
                         </div>
@@ -513,9 +683,9 @@ export default function ReportsPage() {
                                     <div className="flex justify-between items-start mb-6">
                                         <div>
                                             <h3 className="text-lg font-bold text-gray-900">{selectedProjectData.name}</h3>
-                                            <p className="text-sm text-gray-500">รหัส: {(selectedProjectData as any).code || '-'}</p>
+                                            <p className="text-sm text-gray-500">รหัส: {selectedProjectData.code || '-'}</p>
                                         </div>
-                                        <span className={`px-3 py-1 rounded-sm text-xs font-semibold ${selectedProjectData.overallProgress === 100 ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                                        <span className={`px-3 py-1 rounded-sm text-xs font-semibold ${selectedProjectActualProgress >= 100 ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
                                             {selectedProjectData.status.toUpperCase()}
                                         </span>
                                     </div>
@@ -523,7 +693,7 @@ export default function ReportsPage() {
                                     <div className="grid grid-cols-2 gap-8 mb-6">
                                         <div>
                                             <p className="text-sm text-gray-500 mb-1">ความคืบหน้าจริง (Actual)</p>
-                                            <p className="text-4xl font-bold text-blue-600">{selectedProjectData.overallProgress.toFixed(2)}%</p>
+                                            <p className="text-4xl font-bold text-blue-600">{selectedProjectActualProgress.toFixed(2)}%</p>
                                         </div>
                                         <div>
                                             <p className="text-sm text-gray-500 mb-1">ระยะเวลาดำเนินงาน</p>
@@ -539,11 +709,11 @@ export default function ReportsPage() {
                                             การเบิกจ่ายงบประมาณ (Financial Progress)
                                         </h4>
                                         <div className="w-full bg-gray-200 rounded-sm h-2.5 mb-1">
-                                            <div className="bg-green-500 h-2.5 rounded-sm" style={{ width: `${selectedProjectData.overallProgress}%` }}></div>
+                                            <div className="bg-green-500 h-2.5 rounded-sm" style={{ width: `${selectedProjectActualProgress}%` }}></div>
                                         </div>
                                         <div className="flex justify-between text-xs text-gray-500">
-                                            <span>ใช้งบไปแล้ว: estimate {(((selectedProjectData as any).budget || 0) * (selectedProjectData.overallProgress / 100)).toLocaleString()} บาท</span>
-                                            <span>งบทั้งหมด: {((selectedProjectData as any).budget || 0).toLocaleString()} บาท</span>
+                                            <span>ใช้งบไปแล้ว: estimate {(getBudget(selectedProjectData) * (selectedProjectActualProgress / 100)).toLocaleString()} บาท</span>
+                                            <span>งบทั้งหมด: {getBudget(selectedProjectData).toLocaleString()} บาท</span>
                                         </div>
                                     </div>
                                 </div>
@@ -565,30 +735,31 @@ export default function ReportsPage() {
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-100">
-                                                {/* Mock Data - In real app, calculate monthly snapshots */}
-                                                <tr>
-                                                    <td className="px-4 py-3 font-medium">มกราคม 2026</td>
-                                                    <td className="px-4 py-3 text-center text-gray-600">5.00%</td>
-                                                    <td className="px-4 py-3 text-center font-semibold text-blue-600">5.20%</td>
-                                                </tr>
-                                                <tr>
-                                                    <td className="px-4 py-3 font-medium">กุมภาพันธ์ 2026</td>
-                                                    <td className="px-4 py-3 text-center text-gray-600">12.50%</td>
-                                                    <td className="px-4 py-3 text-center font-semibold text-blue-600">10.15%</td>
-                                                </tr>
-                                                <tr className="bg-blue-50/50">
-                                                    <td className="px-4 py-3 font-medium text-blue-800">ปัจจุบัน (Today)</td>
-                                                    <td className="px-4 py-3 text-center text-blue-800 font-bold">
-                                                        {portfolioData.find(p => p.id === selectedProjectId)?.planProgress.toFixed(2)}%
-                                                    </td>
-                                                    <td className="px-4 py-3 text-center font-bold text-blue-600">
-                                                        {selectedProjectData.overallProgress.toFixed(2)}%
-                                                    </td>
-                                                </tr>
+                                                {monthlyProgressRows.length === 0 ? (
+                                                    <tr>
+                                                        <td colSpan={3} className="px-4 py-6 text-center text-gray-500">
+                                                            ไม่มีข้อมูลรายเดือนสำหรับโครงการนี้
+                                                        </td>
+                                                    </tr>
+                                                ) : (
+                                                    monthlyProgressRows.map((row) => (
+                                                        <tr key={row.monthKey} className={row.isCurrent ? 'bg-blue-50/50' : ''}>
+                                                            <td className={`px-4 py-3 font-medium ${row.isCurrent ? 'text-blue-800' : ''}`}>
+                                                                {row.isCurrent ? `${row.label} (Current)` : row.label}
+                                                            </td>
+                                                            <td className={`px-4 py-3 text-center ${row.isCurrent ? 'text-blue-800 font-bold' : 'text-gray-600'}`}>
+                                                                {row.planProgress.toFixed(2)}%
+                                                            </td>
+                                                            <td className={`px-4 py-3 text-center font-semibold ${row.isCurrent ? 'text-blue-600' : 'text-gray-700'}`}>
+                                                                {row.actualProgress.toFixed(2)}%
+                                                            </td>
+                                                        </tr>
+                                                    ))
+                                                )}
                                             </tbody>
                                         </table>
                                         <div className="mt-4 text-xs text-gray-400 text-center">
-                                            * ข้อมูลรายเดือนคำนวณจากแผนงาน S-Curve
+                                            * ข้อมูลรายเดือนคำนวณจากงานจริงในระบบ (ตัดงานประเภท group ออก)
                                         </div>
                                     </div>
                                 </div>
@@ -655,7 +826,7 @@ export default function ReportsPage() {
                                                     <p className="text-xs text-gray-500 mb-2">{task.category}</p>
                                                     <div className="flex justify-between text-xs text-red-600 font-medium">
                                                         <span>ควรเสร็จเมื่อ: {format(new Date(task.planEndDate), 'dd MMM yy')}</span>
-                                                        <span>(-{differenceInDays(new Date(), new Date(task.planEndDate))} วัน)</span>
+                                                        <span>(-{calculateDelayDays(task.planEndDate)} วัน)</span>
                                                     </div>
                                                 </div>
                                             ))}

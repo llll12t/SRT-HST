@@ -3,10 +3,11 @@ import "./globals.css";
 import ClientLayout from "@/components/layout/ClientLayout";
 
 export const metadata: Metadata = {
-  title: "SRT-HST Construction Management",
-  description: "Full-Cycle Construction Management System - ระบบจัดการงานก่อสร้างแบบครบวงจร",
+  title: "PWT-PLAN",
+  description: "Powertec Construction Management ",
   keywords: ["construction", "management", "gantt chart", "s-curve", "progress tracking"],
 };
+
 
 export default function RootLayout({
   children,

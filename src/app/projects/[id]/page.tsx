@@ -1,3 +1,4 @@
+
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -30,32 +31,22 @@ import {
     ArrowDown,
     GripVertical,
     Settings2,
+    MoreHorizontal,
+    FileInput,
+    Layout
 } from 'lucide-react';
 import { format, parseISO, differenceInDays, addDays } from 'date-fns';
+import { todayISO, formatDateShort, calcDurationDays, parseLocalDate } from '@/lib/dateUtils';
 import { Project, Task, Employee } from '@/types/construction';
 import { getProject, getTasks, createTask, updateTask, deleteTask, getEmployees, syncGroupProgress, batchCreateTasks, deleteAllTasks } from '@/lib/firestore';
 import { useAuth } from '@/contexts/AuthContext';
+import { COST_CODES, getCostCodeName } from '@/constants/costCodes';
 
-// Helper: Format date to Thai format
-const formatDateTH = (dateStr: string | undefined | null) => {
-    if (!dateStr) return '-';
-    try {
-        const date = parseISO(dateStr);
-        return format(date, 'dd/MM/yy');
-    } catch {
-        return '-';
-    }
-};
+// Helper: Format date to Thai short format (uses centralized dateUtils)
+const formatDateTH = (dateStr: string | undefined | null) => formatDateShort(dateStr);
 
-// Helper: Calculate duration in days
-const calcDuration = (start: string, end: string) => {
-    if (!start || !end) return 0;
-    try {
-        return differenceInDays(parseISO(end), parseISO(start)) + 1;
-    } catch {
-        return 0;
-    }
-};
+// Helper: Calculate duration in days (uses centralized dateUtils)
+const calcDuration = (start: string, end: string) => calcDurationDays(start, end);
 
 export default function ProjectDetailPage() {
     const { user } = useAuth();
@@ -97,6 +88,7 @@ export default function ProjectDetailPage() {
         progress: 0,
         responsible: '',
         assignedEmployeeIds: [] as string[],
+        costCode: '',
     });
 
     // Progress Modal
@@ -105,7 +97,7 @@ export default function ProjectDetailPage() {
         taskId: '',
         taskName: '',
         newProgress: 0,
-        updateDate: new Date().toISOString().split('T')[0],
+        updateDate: todayISO(),
         actualStartDate: '',
         actualEndDate: '',
         planStartDate: '',
@@ -120,7 +112,7 @@ export default function ProjectDetailPage() {
     const [categoryOrder, setCategoryOrder] = useState<string[]>([]);
     const [dragType, setDragType] = useState<'task' | 'category' | null>(null);
     const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
-    type OptionalColumnKey = 'planDate' | 'cost' | 'quantity' | 'duration' | 'responsible' | 'progress' | 'status' | 'actions';
+    type OptionalColumnKey = 'planDate' | 'cost' | 'quantity' | 'duration' | 'responsible' | 'progress' | 'status' | 'actions' | 'costCode';
     const [visibleColumns, setVisibleColumns] = useState<Record<OptionalColumnKey, boolean>>({
         planDate: true,
         cost: true,
@@ -129,6 +121,7 @@ export default function ProjectDetailPage() {
         responsible: true,
         progress: true,
         status: true,
+        costCode: true,
         actions: true,
     });
     const [isColumnMenuOpen, setIsColumnMenuOpen] = useState(false);
@@ -143,8 +136,17 @@ export default function ProjectDetailPage() {
         onConfirm?: () => void;
     }>({ isOpen: false, title: '', message: '', type: 'info' });
 
+    // Menu States
+    const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
+    const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
+    const viewMenuRef = React.useRef<HTMLDivElement>(null);
+    const manageMenuRef = React.useRef<HTMLDivElement>(null);
+
+
     // Category Colors State (Synced with Gantt)
     const [categoryColors, setCategoryColors] = useState<Record<string, string>>({});
+    const [activeColorMenu, setActiveColorMenu] = useState<{ key: string; top: number; left: number } | null>(null);
+    const COLORS = ['#2563eb', '#16a34a', '#dc2626', '#ca8a04', '#7c3aed', '#ea580c', '#0891b2', '#6b7280'];
 
     useEffect(() => {
         if (typeof window !== 'undefined') {
@@ -168,6 +170,12 @@ export default function ProjectDetailPage() {
         const handleClickOutside = (event: MouseEvent) => {
             if (columnMenuRef.current && !columnMenuRef.current.contains(event.target as Node)) {
                 setIsColumnMenuOpen(false);
+            }
+            if (viewMenuRef.current && !viewMenuRef.current.contains(event.target as Node)) {
+                setIsViewMenuOpen(false);
+            }
+            if (manageMenuRef.current && !manageMenuRef.current.contains(event.target as Node)) {
+                setIsManageMenuOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -336,12 +344,17 @@ export default function ProjectDetailPage() {
         };
     };
 
+    const getEffectiveStatus = (task: Task): Task['status'] => {
+        if ((task.progress || 0) >= 100) return 'completed';
+        return task.status || 'not-started';
+    };
+
     // Project Stats
     const projectStats = useMemo(() => {
         const total = tasks.length;
-        const completed = tasks.filter(t => t.status === 'completed').length;
-        const inProgress = tasks.filter(t => t.status === 'in-progress').length;
-        const notStarted = tasks.filter(t => t.status === 'not-started').length;
+        const completed = tasks.filter(t => getEffectiveStatus(t) === 'completed').length;
+        const inProgress = tasks.filter(t => getEffectiveStatus(t) === 'in-progress').length;
+        const notStarted = tasks.filter(t => getEffectiveStatus(t) === 'not-started').length;
 
         let totalDuration = 0;
         let weightedProgress = 0;
@@ -404,12 +417,13 @@ export default function ProjectDetailPage() {
             name: '',
             cost: 0,
             quantity: '',
-            planStartDate: project?.startDate || new Date().toISOString().split('T')[0],
+            planStartDate: project?.startDate || todayISO(),
             planEndDate: project?.endDate || '',
             progress: 0,
             responsible: '',
             assignedEmployeeIds: [],
-            planDuration: 1
+            planDuration: 1,
+            costCode: ''
         });
         setIsModalOpen(true);
         setShowSubcategory(!!initialSubcategory);
@@ -439,7 +453,8 @@ export default function ProjectDetailPage() {
             progress: task.progress || 0,
             responsible: task.responsible || '',
             assignedEmployeeIds: task.assignedEmployeeIds || fallbackAssignedIds,
-            planDuration: task.planDuration || (task.planStartDate && task.planEndDate ? differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1 : 1)
+            planDuration: task.planDuration || calcDurationDays(task.planStartDate, task.planEndDate) || 1,
+            costCode: task.costCode || ''
         });
         setIsModalOpen(true);
     };
@@ -475,6 +490,7 @@ export default function ProjectDetailPage() {
                 planStartDate: taskForm.planStartDate,
                 planEndDate: taskForm.planEndDate,
                 planDuration: duration,
+                costCode: taskForm.costCode,
                 progress: taskForm.progress,
                 responsible: responsibleNames,
                 assignedEmployeeIds,
@@ -503,7 +519,7 @@ export default function ProjectDetailPage() {
         setAlertDialog({
             isOpen: true,
             title: 'ยืนยันการลบ',
-            message: `ต้องการลบงาน "${task.name}" หรือไม่?`,
+            message: `ต้องการลบงาน "${task.name}" หรือไม่ ? `,
             type: 'confirm',
             onConfirm: async () => {
                 try {
@@ -523,7 +539,7 @@ export default function ProjectDetailPage() {
         setAlertDialog({
             isOpen: true,
             title: 'ยืนยันการลบทั้งหมด',
-            message: `คุณแน่ใจหรือไม่ที่จะลบงานทั้งหมด ${tasks.length} รายการ? การกระทำนี้ไม่สามารถย้อนกลับได้`,
+            message: `คุณแน่ใจหรือไม่ที่จะลบงานทั้งหมด ${tasks.length} รายการ ? การกระทำนี้ไม่สามารถย้อนกลับได้`,
             type: 'confirm',
             onConfirm: async () => {
                 try {
@@ -568,8 +584,6 @@ export default function ProjectDetailPage() {
                 const sourceCat = sourceId.replace('cat::', '');
                 // Target might be "Cat::Sub" if dropped on sub row, we only care if it's a top level cat for reordering?
                 // Actually, if we only support reordering top level, we should check if target is top level.
-                // Assuming `category` passed from Row 1 is just identifier.
-                // If dropped on Sub row (Cat::Sub), we probably shouldn't reorder Categories based on that?
                 // Let's assume Category Reorder only works on top level rows for now.
                 if (target.includes('::')) return;
 
@@ -577,7 +591,7 @@ export default function ProjectDetailPage() {
                 if (sourceCat === targetCat) return;
 
                 const allCats = Object.keys(hierarchicalData);
-                let currentOrder = categoryOrder.length > 0 ? [...categoryOrder] : [...allCats];
+                const currentOrder = categoryOrder.length > 0 ? [...categoryOrder] : [...allCats];
 
                 // Ensure all are present
                 allCats.forEach(c => {
@@ -713,7 +727,7 @@ export default function ProjectDetailPage() {
             // Note: If orders are equal or not set, we might need a more robust re-indexing strategy.
             // But assuming unique orders or at least sortable, swapping values generally works to swap positions.
             // If they have same order value, swapping does nothing. Maximize difference.
-            let taskOrder = task.order || 0;
+            const taskOrder = task.order || 0;
             let targetOrder = targetTask.order || 0;
 
             if (taskOrder === targetOrder) {
@@ -762,7 +776,8 @@ export default function ProjectDetailPage() {
             'Progress (%)',
             'Status',
             'Actual Start',
-            'Actual End'
+            'Actual End',
+            'Cost Code'
         ];
 
         // Add instruction row
@@ -781,7 +796,8 @@ export default function ProjectDetailPage() {
             'ความคืบหน้า (%)',
             'สถานะ',
             'วันเริ่มจริง (dd/MM/yyyy)',
-            'วันสิ้นสุดจริง (dd/MM/yyyy)'
+            'วันสิ้นสุดจริง (dd/MM/yyyy)',
+            'รหัสต้นทุน'
         ];
 
         const rows = tasks.map(t => [
@@ -797,9 +813,10 @@ export default function ProjectDetailPage() {
             `"${(t.quantity || '').replace(/"/g, '""')}"`,
             `"${(t.responsible || '').replace(/"/g, '""')}"`,
             t.progress || 0,
-            t.status || 'not-started',
+            getEffectiveStatus(t),
             formatDateForCSV(t.actualStartDate),
-            formatDateForCSV(t.actualEndDate)
+            formatDateForCSV(t.actualEndDate),
+            `"${(t.costCode || '').replace(/"/g, '""')}"`
         ]);
 
         // Add BOM for Excel Thai support
@@ -891,6 +908,15 @@ export default function ProjectDetailPage() {
                     } catch { }
                 }
 
+                const importedProgress = parseFloat((row['Progress'] || row['Progress (%)'] || row['ความคืบหน้า'] || '0').replace('%', ''));
+                const rawImportedStatus = (row['Status'] || 'not-started').toLowerCase();
+                const normalizedStatus: Task['status'] =
+                    importedProgress >= 100
+                        ? 'completed'
+                        : rawImportedStatus === 'completed' || rawImportedStatus === 'in-progress' || rawImportedStatus === 'delayed' || rawImportedStatus === 'not-started'
+                            ? rawImportedStatus
+                            : 'not-started';
+
                 newTasks.push({
                     projectId,
                     category,
@@ -904,11 +930,12 @@ export default function ProjectDetailPage() {
                     planStartDate: pStart,
                     planEndDate: pEnd,
                     planDuration: duration || pStart && pEnd ? calcDuration(pStart, pEnd) : 1,
-                    progress: parseFloat((row['Progress'] || row['Progress (%)'] || row['ความคืบหน้า'] || '0').replace('%', '')),
-                    status: (row['Status'] || 'not-started').toLowerCase(),
+                    progress: importedProgress,
+                    status: normalizedStatus,
                     order: ++orderCounter,
                     actualStartDate: fixDate(row['Actual Start'] || ''),
-                    actualEndDate: fixDate(row['Actual End'] || '')
+                    actualEndDate: fixDate(row['Actual End'] || ''),
+                    costCode: row['Cost Code'] || row['รหัสต้นทุน'] || ''
                 });
             }
 
@@ -934,19 +961,19 @@ export default function ProjectDetailPage() {
         const headers = [
             'Category', 'Subcategory', 'SubSubcategory', 'Type', 'Task Name',
             'Plan Start', 'Plan End', 'Duration (Days)', 'Cost',
-            'Quantity', 'Responsible', 'Progress (%)', 'Status'
+            'Quantity', 'Responsible', 'Progress (%)', 'Status', 'Cost Code'
         ];
 
         const instruction = [
             'หมวดหมู่ (จำเป็น)', 'หมวดหมู่ย่อย', 'หมวดหมู่ย่อย 2', 'task/group', 'ชื่องาน (จำเป็น)',
             'dd/MM/yyyy', 'dd/MM/yyyy', 'จำนวนวัน', 'บาท',
-            'หน่วย', 'ชื่อผู้รับผิดชอบ', '0-100', 'not-started/in-progress/completed'
+            'หน่วย', 'ชื่อผู้รับผิดชอบ', '0-100', 'not-started/in-progress/completed', 'รหัสต้นทุน'
         ];
 
         const sample = [
-            ['งานเตรียมการ', '', '', 'task', 'งานรื้อถอน', '01/01/2024', '05/01/2024', '5', '10000', '1 งาน', 'ช่าง ก', '0', 'not-started'],
-            ['งานโครงสร้าง', 'งานฐานราก', '', 'task', 'ขุดดิน', '06/01/2024', '10/01/2024', '5', '5000', '10 ลบ.ม.', 'ช่าง ข', '0', 'not-started'],
-            ['งานโครงสร้าง', 'งานฐานราก', 'งานเหล็กเสริม', 'task', 'ผูกเหล็ก', '11/01/2024', '15/01/2024', '5', '20000', '100 กก.', 'ช่าง ค', '0', 'not-started']
+            ['งานเตรียมการ', '', '', 'task', 'งานรื้อถอน', '01/01/2024', '05/01/2024', '5', '10000', '1 งาน', 'ช่าง ก', '0', 'not-started', '1'],
+            ['งานโครงสร้าง', 'งานฐานราก', '', 'task', 'ขุดดิน', '06/01/2024', '10/01/2024', '5', '5000', '10 ลบ.ม.', 'ช่าง ข', '0', 'not-started', '3'],
+            ['งานโครงสร้าง', 'งานฐานราก', 'งานเหล็กเสริม', 'task', 'ผูกเหล็ก', '11/01/2024', '15/01/2024', '5', '20000', '100 กก.', 'ช่าง ค', '0', 'not-started', '1']
         ];
 
         const csvContent = '\uFEFF' + [
@@ -967,7 +994,7 @@ export default function ProjectDetailPage() {
             taskId: task.id,
             taskName: task.name,
             newProgress: task.progress,
-            updateDate: new Date().toISOString().split('T')[0],
+            updateDate: todayISO(),
             actualStartDate: task.actualStartDate || '',
             actualEndDate: task.actualEndDate || '',
             planStartDate: task.planStartDate || '',
@@ -1098,6 +1125,24 @@ export default function ProjectDetailPage() {
         });
     };
 
+    const openColorMenu = (e: React.MouseEvent<HTMLElement>, key: string) => {
+        e.stopPropagation();
+        const rect = e.currentTarget.getBoundingClientRect();
+        setActiveColorMenu({
+            key,
+            top: rect.bottom + window.scrollY,
+            left: rect.left + window.scrollX
+        });
+    };
+
+    const handleColorChange = (color: string) => {
+        if (!activeColorMenu) return;
+        const next = { ...categoryColors, [activeColorMenu.key]: color };
+        setCategoryColors(next);
+        localStorage.setItem('gantt_category_colors', JSON.stringify(next));
+        setActiveColorMenu(null);
+    };
+
     // Status Badge
     const getStatusBadge = (status: string) => {
         const configs: Record<string, { class: string; label: string }> = {
@@ -1155,6 +1200,8 @@ export default function ProjectDetailPage() {
         { key: 'responsible', label: 'ผู้รับผิดชอบ' },
         { key: 'progress', label: 'Progress' },
         { key: 'status', label: 'สถานะ' },
+        { key: 'status', label: 'สถานะ' },
+        { key: 'costCode', label: 'Cost Code' },
         { key: 'actions', label: 'Actions' },
     ];
 
@@ -1187,114 +1234,207 @@ export default function ProjectDetailPage() {
     return (
         <div className="space-y-6">
             {/* Header */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div className="flex min-w-0 flex-1 items-start gap-4">
                     <Link href="/projects" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
                         <ArrowLeft className="w-5 h-5 text-gray-600" />
                     </Link>
-                    <div>
+                    <div className="min-w-0">
                         <h1 className="text-2xl font-bold text-gray-900">{project.name}</h1>
-                        <p className="text-sm text-gray-500 mt-0.5">{project.description || 'ไม่มีคำอธิบาย'}</p>
+                        <p
+                            className="mt-0.5 max-w-[900px] truncate text-sm text-gray-500"
+                            title={project.description || 'No description'}
+                        >
+                            {project.description || '\u0E44\u0E21\u0E48\u0E21\u0E35\u0E04\u0E33\u0E2D\u0E18\u0E34\u0E1B\u0E32\u0E22'}
+                        </p>
                     </div>
                 </div>
-                {canEdit && (
-                    <div className="flex gap-2">
+
+                {/* Views Dropdown & Manage Dropdown Here */}
+                <div className="flex flex-wrap gap-2 sm:ml-auto sm:justify-end items-center">
+                    {/* Views Dropdown */}
+                    <div className="relative" ref={viewMenuRef}>
                         <button
-                            onClick={handleDeleteAllTasks}
-                            className="px-3 py-2 bg-red-50 border border-red-200 text-red-600 rounded-lg hover:bg-red-100 transition-colors flex items-center gap-2 text-sm font-medium"
-                            title="ลบงานทั้งหมด"
+                            onClick={() => setIsViewMenuOpen(!isViewMenuOpen)}
+                            className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-sm hover:bg-gray-50 transition-colors flex items-center gap-1.5"
                         >
-                            <Trash2 className="w-4 h-4" />
-                            ลบทั้งหมด
+                            <Layout className="w-4 h-4 text-gray-500" />
+                            Views
+                            <ChevronDown className="w-3 h-3 text-gray-400" />
                         </button>
-                        <button
-                            onClick={handleExport}
-                            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm font-medium"
-                            title="Export to CSV"
-                        >
-                            <Download className="w-4 h-4" />
-                            Export
-                        </button>
-                        <button
-                            onClick={handleDownloadTemplate}
-                            className="px-3 py-2 bg-green-50 border border-green-200 text-green-700 rounded-lg hover:bg-green-100 transition-colors flex items-center gap-2 text-sm font-medium"
-                            title="ดาวน์โหลดตัวอย่าง CSV"
-                        >
-                            <Download className="w-4 h-4" />
-                            ตัวอย่าง CSV
-                        </button>
-                        <label className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center gap-2 text-sm font-medium cursor-pointer">
-                            <Upload className="w-4 h-4" />
-                            Import
-                            <input type="file" accept=".csv" onChange={handleImport} className="hidden" />
-                        </label>
-                        <button
-                            onClick={() => openCreateModal()}
-                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 text-sm font-medium"
-                        >
-                            <Plus className="w-4 h-4" />
-                            เพิ่มงานใหม่
-                        </button>
+
+                        {isViewMenuOpen && (
+                            <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded  z-50 py-1">
+                                <Link
+                                    href={`/gantt/${projectId}`}
+                                    className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                    onClick={() => setIsViewMenuOpen(false)}
+                                >
+                                    <Layers className="w-4 h-4 text-blue-600" />
+                                    Gantt Chart
+                                </Link>
+                                <Link
+                                    href={`/cost-code/${projectId}`}
+                                    className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                    onClick={() => setIsViewMenuOpen(false)}
+                                >
+                                    <Target className="w-4 h-4 text-purple-600" />
+                                    Cost Code Summary
+                                </Link>
+                                <Link
+                                    href={`/gantt-4w/${projectId}`}
+                                    className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                    onClick={() => setIsViewMenuOpen(false)}
+                                >
+                                    <Calendar className="w-4 h-4 text-indigo-600" />
+                                    4-Week Lookahead
+                                </Link>
+                                <Link
+                                    href={`/procurement/${projectId}`}
+                                    className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                    onClick={() => setIsViewMenuOpen(false)}
+                                >
+                                    <Calendar className="w-4 h-4 text-amber-600" />
+                                    Procurement Plan
+                                </Link>
+                                <Link
+                                    href={`/scurve/${projectId}`}
+                                    className="px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                    onClick={() => setIsViewMenuOpen(false)}
+                                >
+                                    <TrendingUp className="w-4 h-4 text-emerald-600" />
+                                    S-Curve Analysis
+                                </Link>
+                            </div>
+                        )}
                     </div>
-                )}
+
+                    {canEdit && (
+                        <>
+                            {/* Manage Dropdown */}
+                            <div className="relative" ref={manageMenuRef}>
+                                <button
+                                    onClick={() => setIsManageMenuOpen(!isManageMenuOpen)}
+                                    className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-white border border-gray-200 rounded-sm hover:bg-gray-50 transition-colors flex items-center gap-1.5"
+                                >
+                                    <Settings2 className="w-4 h-4 text-gray-500" />
+                                    Manage
+                                    <ChevronDown className="w-3 h-3 text-gray-400" />
+                                </button>
+
+                                {isManageMenuOpen && (
+                                    <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded  z-50 py-1">
+                                        <button
+                                            onClick={() => {
+                                                handleExport();
+                                                setIsManageMenuOpen(false);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                        >
+                                            <Download className="w-4 h-4" />
+                                            Export CSV
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                handleDownloadTemplate();
+                                                setIsManageMenuOpen(false);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                        >
+                                            <FileInput className="w-4 h-4" />
+                                            Download Template
+                                        </button>
+                                        <label className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2 cursor-pointer">
+                                            <Upload className="w-4 h-4" />
+                                            Import CSV
+                                            <input type="file" accept=".csv" onChange={(e) => {
+                                                handleImport(e);
+                                                setIsManageMenuOpen(false);
+                                            }} className="hidden" />
+                                        </label>
+                                        <div className="h-px bg-gray-100 my-1" />
+                                        <button
+                                            onClick={() => {
+                                                handleDeleteAllTasks();
+                                                setIsManageMenuOpen(false);
+                                            }}
+                                            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                            Delete All Data
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => openCreateModal()}
+                                className="px-3 py-1.5 text-xs font-medium text-white bg-blue-600 rounded-sm hover:bg-blue-700 transition-colors flex items-center gap-1.5 shadow-sm"
+                            >
+                                <Plus className="w-4 h-4" />
+                                เพิ่มงานใหม่
+                            </button>
+                        </>
+                    )}
+                </div>
             </div>
 
             {/* Project Overview Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <Target className="w-5 h-5 text-blue-600" />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-1.5">
+                <div className="bg-white rounded-md border border-gray-200 p-2">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center">
+                            <Target className="w-3 h-3 text-blue-600" />
                         </div>
                         <div>
-                            <p className="text-xs text-gray-500">ความคืบหน้า</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.overallProgress.toFixed(1)}%</p>
+                            <p className="text-[11px] text-gray-500 leading-none mb-0.5">ความคืบหน้า</p>
+                            <p className="text-lg leading-none font-bold text-gray-900">{projectStats.overallProgress.toFixed(1)}%</p>
                         </div>
                     </div>
-                    <div className="mt-3">
+                    <div className="mt-1.5">
                         <ProgressBar value={projectStats.overallProgress} size="md" />
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                            <CheckCircle2 className="w-5 h-5 text-green-600" />
+                <div className="bg-white rounded-md border border-gray-200 p-2">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-6 bg-green-100 rounded flex items-center justify-center">
+                            <CheckCircle2 className="w-3 h-3 text-green-600" />
                         </div>
                         <div>
-                            <p className="text-xs text-gray-500">เสร็จสิ้น</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.completed}/{projectStats.total}</p>
+                            <p className="text-[11px] text-gray-500 leading-none mb-0.5">เสร็จสิ้น</p>
+                            <p className="text-lg leading-none font-bold text-gray-900">{projectStats.completed}/{projectStats.total}</p>
                         </div>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                            <Clock className="w-5 h-5 text-amber-600" />
+                <div className="bg-white rounded-md border border-gray-200 p-2">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-6 bg-amber-100 rounded flex items-center justify-center">
+                            <Clock className="w-3 h-3 text-amber-600" />
                         </div>
                         <div>
-                            <p className="text-xs text-gray-500">กำลังดำเนินการ</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.inProgress}</p>
+                            <p className="text-[11px] text-gray-500 leading-none mb-0.5">กำลังดำเนินการ</p>
+                            <p className="text-lg leading-none font-bold text-gray-900">{projectStats.inProgress}</p>
                         </div>
                     </div>
                 </div>
 
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                            <TrendingUp className="w-5 h-5 text-purple-600" />
+                <div className="bg-white rounded-md border border-gray-200 p-2">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-6 h-6 bg-purple-100 rounded flex items-center justify-center">
+                            <TrendingUp className="w-3 h-3 text-purple-600" />
                         </div>
                         <div>
-                            <p className="text-xs text-gray-500">งบประมาณรวม</p>
-                            <p className="text-xl font-bold text-gray-900">{projectStats.totalCost.toLocaleString()}</p>
+                            <p className="text-[11px] text-gray-500 leading-none mb-0.5">งบประมาณรวม</p>
+                            <p className="text-lg leading-none font-bold text-gray-900">{projectStats.totalCost.toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
             </div>
 
             {/* Task Table */}
-            <div className="bg-white rounded-xl border border-gray-300 overflow-visible">
+            <div className="bg-white rounded-lg border border-gray-200 overflow-visible ">
                 <div className="px-4 py-3 border-b border-gray-200 bg-slate-50 flex items-center justify-between">
                     <h2 className="font-semibold text-gray-900 flex items-center gap-2">
                         <ListTodo className="w-5 h-5 text-blue-600" />
@@ -1304,13 +1444,13 @@ export default function ProjectDetailPage() {
                         <button
                             type="button"
                             onClick={() => setIsColumnMenuOpen(prev => !prev)}
-                            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm text-gray-700 bg-white border border-gray-200 rounded-sm hover:bg-gray-50"
                         >
                             <Settings2 className="w-4 h-4" />
                             คอลัมน์
                         </button>
                         {isColumnMenuOpen && (
-                            <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg shadow-lg z-[80] p-2">
+                            <div className="absolute right-0 mt-2 w-56 bg-white border border-gray-200 rounded-lg  z-[80] p-2">
                                 {columnOptions.map((col) => (
                                     <label key={col.key} className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50 rounded cursor-pointer">
                                         <input
@@ -1356,6 +1496,7 @@ export default function ProjectDetailPage() {
                                     {visibleColumns.responsible && <th className="px-3 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wide">ผู้รับผิดชอบ</th>}
                                     {visibleColumns.progress && <th className="px-3 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wide">Progress</th>}
                                     {visibleColumns.status && <th className="px-3 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wide">สถานะ</th>}
+                                    {visibleColumns.costCode && <th className="px-3 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wide">Cost Code</th>}
                                     {visibleColumns.actions && <th className="px-3 py-3 text-center text-[11px] font-bold text-slate-500 uppercase tracking-wide sticky right-0 z-30 bg-slate-50 border-l border-gray-200">Actions</th>}
                                 </tr>
                             </thead>
@@ -1394,9 +1535,26 @@ export default function ProjectDetailPage() {
                                                     <td className="px-2 py-3 text-center cursor-move text-gray-300 hover:text-gray-500" onClick={(e) => e.stopPropagation()}>
                                                         {canEdit && <GripVertical className="w-4 h-4 mx-auto" />}
                                                     </td>
-                                                    <td className="min-w-[360px] px-4 py-3 cursor-pointer sticky left-0 z-20 bg-inherit" onClick={() => toggleCategory(category)}>
+                                                    <td className="min-w-[360px] px-4 py-3 sticky left-0 z-20 bg-inherit">
                                                         <div className="flex items-center gap-2">
-                                                            {isCatCollapsed ? <ChevronRight className="w-4 h-4 text-gray-500" /> : <ChevronDown className="w-4 h-4 text-gray-500" />}
+                                                            <button
+                                                                type="button"
+                                                                className="p-0.5 rounded-sm text-gray-500 hover:bg-gray-100"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    toggleCategory(category);
+                                                                }}
+                                                                title={isCatCollapsed ? 'Expand category' : 'Collapse category'}
+                                                            >
+                                                                {isCatCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="w-3 h-3 rounded-full border border-white/80 shadow-sm hover:scale-110 transition-transform"
+                                                                style={{ backgroundColor: catColor }}
+                                                                onClick={(e) => openColorMenu(e, category)}
+                                                                title="กำหนดสีหมวดหมู่"
+                                                            />
                                                             <Layers className="w-4 h-4" style={{ color: catColor }} />
                                                             <span className="font-semibold text-gray-900" style={{ color: catColor }}>{category}</span>
                                                             <span className="text-xs text-gray-500">({totalItems} รายการ)</span>
@@ -1435,6 +1593,7 @@ export default function ProjectDetailPage() {
                                                         </td>
                                                     )}
                                                     {visibleColumns.status && <td className="px-3 py-2 text-center">-</td>}
+                                                    {visibleColumns.costCode && <td className="px-3 py-2 text-center">-</td>}
                                                     {visibleColumns.actions && <td className="px-3 py-2 text-center sticky right-0 z-20 bg-inherit border-l border-gray-200">-</td>}
                                                 </tr>
 
@@ -1454,8 +1613,7 @@ export default function ProjectDetailPage() {
                                                                 <React.Fragment key={uniqueSubcatId}>
                                                                     {/* Level 2: Subcategory Row */}
                                                                     <tr
-                                                                        className="bg-slate-50 hover:bg-slate-100 cursor-pointer"
-                                                                        onClick={() => toggleSubcategory(uniqueSubcatId)}
+                                                                        className="bg-slate-50 hover:bg-slate-100"
                                                                         onDragOver={handleDragOver}
                                                                         onDrop={(e) => handleDrop(e, uniqueSubcatId)}
                                                                     >
@@ -1464,7 +1622,24 @@ export default function ProjectDetailPage() {
                                                                         </td>
                                                                         <td className="min-w-[360px] px-4 py-2 pl-10 sticky left-0 z-20 bg-inherit">
                                                                             <div className="flex items-center gap-2">
-                                                                                {isSubCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="p-0.5 rounded-sm text-gray-500 hover:bg-gray-200"
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        toggleSubcategory(uniqueSubcatId);
+                                                                                    }}
+                                                                                    title={isSubCollapsed ? 'Expand subcategory' : 'Collapse subcategory'}
+                                                                                >
+                                                                                    {isSubCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                                                </button>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="w-2.5 h-2.5 rounded-full border border-white/80 shadow-sm hover:scale-110 transition-transform"
+                                                                                    style={{ backgroundColor: subColor }}
+                                                                                    onClick={(e) => openColorMenu(e, uniqueSubcatId)}
+                                                                                    title="กำหนดสีหมวดย่อย"
+                                                                                />
                                                                                 <FolderOpen className="w-4 h-4" style={{ color: subColor }} />
                                                                                 <span className="font-medium text-gray-800" style={{ color: subColor }}>{subcat}</span>
                                                                                 <span className="text-xs text-gray-400">({subAllTasks.length})</span>
@@ -1503,6 +1678,7 @@ export default function ProjectDetailPage() {
                                                                             </td>
                                                                         )}
                                                                         {visibleColumns.status && <td className="px-3 py-2 text-center">-</td>}
+                                                                        {visibleColumns.costCode && <td className="px-3 py-2 text-center">-</td>}
                                                                         {visibleColumns.actions && <td className="px-3 py-2 text-center sticky right-0 z-20 bg-inherit border-l border-gray-200">-</td>}
                                                                     </tr>
 
@@ -1520,8 +1696,7 @@ export default function ProjectDetailPage() {
                                                                                     <React.Fragment key={subsub}>
                                                                                         {/* Level 3 Group Row */}
                                                                                         <tr
-                                                                                            className="hover:bg-slate-50 cursor-pointer transition-colors"
-                                                                                            onClick={() => toggleSubSubcategory(uniqueSubsubId)}
+                                                                                            className="hover:bg-slate-50 transition-colors"
                                                                                             onDragOver={handleDragOver}
                                                                                             onDrop={(e) => handleDrop(e, uniqueSubsubId)}
                                                                                         >
@@ -1530,8 +1705,24 @@ export default function ProjectDetailPage() {
                                                                                             </td>
                                                                                             <td className="min-w-[360px] px-4 py-2 pl-16 sticky left-0 z-20 bg-inherit">
                                                                                                 <div className="flex items-center gap-2">
-                                                                                                    {isSubSubCollapsed ? <ChevronRight className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
-                                                                                                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: subSubColor }} />
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        className="p-0.5 rounded-sm text-gray-500 hover:bg-gray-100"
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            toggleSubSubcategory(uniqueSubsubId);
+                                                                                                        }}
+                                                                                                        title={isSubSubCollapsed ? 'Expand sub-subcategory' : 'Collapse sub-subcategory'}
+                                                                                                    >
+                                                                                                        {isSubSubCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                                                                                    </button>
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        className="w-2.5 h-2.5 rounded-full border border-white/80 shadow-sm hover:scale-110 transition-transform"
+                                                                                                        style={{ backgroundColor: subSubColor }}
+                                                                                                        onClick={(e) => openColorMenu(e, uniqueSubsubId)}
+                                                                                                        title="กำหนดสีหมวดย่อยระดับ 3"
+                                                                                                    />
                                                                                                     <span className="text-sm font-medium text-gray-700 italic">{subsub}</span>
                                                                                                     <span className="text-xs text-gray-400">({tasks.length})</span>
                                                                                                     {canEdit && (
@@ -1569,6 +1760,7 @@ export default function ProjectDetailPage() {
                                                                                                 </td>
                                                                                             )}
                                                                                             {visibleColumns.status && <td className="px-3 py-2 text-center">-</td>}
+                                                                                            {visibleColumns.costCode && <td className="px-3 py-2 text-center">-</td>}
                                                                                             {visibleColumns.actions && <td className="px-3 py-2 text-center sticky right-0 z-20 bg-inherit border-l border-gray-200">-</td>}
                                                                                         </tr>
 
@@ -1599,13 +1791,14 @@ export default function ProjectDetailPage() {
                                                                                                 {visibleColumns.responsible && <td className="px-3 py-2 text-left text-xs text-gray-700">{renderResponsibleAvatars(task)}</td>}
                                                                                                 {visibleColumns.progress && (
                                                                                                     <td className="px-3 py-2">
-                                                                                                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                                                                                                            <div className={`h-full ${task.progress === 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${task.progress}%` }}></div>
+                                                                                                        <div className="flex items-center gap-2 justify-center">
+                                                                                                            <div className="w-28"><ProgressBar value={task.progress} /></div>
+                                                                                                            <span className="text-sm font-semibold text-gray-800 tabular-nums w-10 text-right">{task.progress}%</span>
                                                                                                         </div>
-                                                                                                        <div className="text-sm font-semibold text-gray-800 tabular-nums text-right">{task.progress}%</div>
                                                                                                     </td>
                                                                                                 )}
-                                                                                                {visibleColumns.status && <td className="px-3 py-1.5 text-center">{getStatusBadge(task.status)}</td>}
+                                                                                                {visibleColumns.status && <td className="px-3 py-1.5 text-center">{getStatusBadge(getEffectiveStatus(task))}</td>}
+                                                                                                {visibleColumns.costCode && <td className="px-3 py-1.5 text-center text-xs text-gray-500">{task.costCode || '-'}</td>}
                                                                                                 {visibleColumns.actions && (
                                                                                                     <td className="px-3 py-1.5 sticky right-0 z-20 bg-inherit border-l border-gray-200">
                                                                                                         <div className="flex items-center justify-center gap-1">
@@ -1652,13 +1845,14 @@ export default function ProjectDetailPage() {
                                                                                     {visibleColumns.responsible && <td className="px-3 py-2 text-left text-xs text-gray-700">{renderResponsibleAvatars(task)}</td>}
                                                                                     {visibleColumns.progress && (
                                                                                         <td className="px-3 py-2">
-                                                                                            <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                                                                                                <div className={`h-full ${task.progress === 100 ? 'bg-green-500' : 'bg-blue-500'}`} style={{ width: `${task.progress}%` }}></div>
+                                                                                            <div className="flex items-center gap-2 justify-center">
+                                                                                                <div className="w-28"><ProgressBar value={task.progress} /></div>
+                                                                                                <span className="text-sm font-semibold text-gray-800 tabular-nums w-10 text-right">{task.progress}%</span>
                                                                                             </div>
-                                                                                            <div className="text-sm font-semibold text-gray-800 tabular-nums text-right">{task.progress}%</div>
                                                                                         </td>
                                                                                     )}
-                                                                                    {visibleColumns.status && <td className="px-3 py-1.5 text-center">{getStatusBadge(task.status)}</td>}
+                                                                                    {visibleColumns.status && <td className="px-3 py-1.5 text-center">{getStatusBadge(getEffectiveStatus(task))}</td>}
+                                                                                    {visibleColumns.costCode && <td className="px-3 py-1.5 text-center text-xs text-gray-500">{task.costCode || '-'}</td>}
                                                                                     {visibleColumns.actions && (
                                                                                         <td className="px-3 py-1.5 sticky right-0 z-20 bg-inherit border-l border-gray-200">
                                                                                             <div className="flex items-center justify-center gap-1">
@@ -1713,7 +1907,8 @@ export default function ProjectDetailPage() {
                                                                         </div>
                                                                     </td>
                                                                 )}
-                                                                {visibleColumns.status && <td className="px-3 py-1.5 text-center">{getStatusBadge(task.status)}</td>}
+                                                                {visibleColumns.status && <td className="px-3 py-1.5 text-center">{getStatusBadge(getEffectiveStatus(task))}</td>}
+                                                                {visibleColumns.costCode && <td className="px-3 py-1.5 text-center text-xs text-gray-500">{task.costCode || '-'}</td>}
                                                                 {visibleColumns.actions && (
                                                                     <td className="px-3 py-1.5 sticky right-0 z-20 bg-inherit border-l border-gray-200">
                                                                         <div className="flex items-center justify-center gap-1">
@@ -1744,8 +1939,8 @@ export default function ProjectDetailPage() {
             {
                 isModalOpen && (
                     <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4 backdrop-blur-[2px]">
-                        <div className="bg-white rounded-lg w-full max-w-4xl shadow-2xl border border-gray-100 flex flex-col max-h-[90vh]">
-                            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-white rounded-t-lg shrink-0">
+                        <div className="bg-white rounded-lg w-full max-w-4xl shadow-2xl border border-gray-200 flex flex-col max-h-[90vh]">
+                            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-white rounded-t-lg shrink-0">
                                 <div>
                                     <h2 className="text-xl font-semibold text-gray-800">
                                         {editingTask ? 'แก้ไขรายละเอียดงาน' : 'เพิ่มรายการงานใหม่'}
@@ -1875,6 +2070,21 @@ export default function ProjectDetailPage() {
                                     {/* Row 4: Details */}
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                         <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">Cost Code</label>
+                                            <select
+                                                value={taskForm.costCode}
+                                                onChange={(e) => setTaskForm({ ...taskForm, costCode: e.target.value })}
+                                                className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all"
+                                            >
+                                                <option value="">เลือก Cost Code</option>
+                                                {COST_CODES.map((code) => (
+                                                    <option key={code.id} value={code.id}>
+                                                        {code.id} - {code.name}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">งบประมาณ (บาท)</label>
                                             <input
                                                 type="number"
@@ -1898,7 +2108,7 @@ export default function ProjectDetailPage() {
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">ผู้รับผิดชอบ</label>
                                             <div className="w-full border border-gray-300 rounded-lg bg-white">
-                                                <div className="px-3 py-2 border-b border-gray-100 min-h-[44px] flex flex-wrap gap-2">
+                                                <div className="px-3 py-2 border-b border-gray-200 min-h-[44px] flex flex-wrap gap-2">
                                                     {selectedAssignedEmployees.length > 0 ? (
                                                         selectedAssignedEmployees.map((employee) => (
                                                             <span key={employee.id} className="inline-flex items-center gap-2 px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">
@@ -1961,7 +2171,7 @@ export default function ProjectDetailPage() {
                             </div>
 
                             {/* Footer Actions */}
-                            <div className="flex items-center justify-end gap-3 px-8 py-5 bg-gray-50 border-t border-gray-100 rounded-b-lg shrink-0">
+                            <div className="flex items-center justify-end gap-3 px-8 py-5 bg-gray-50 border-t border-gray-200 rounded-b-lg shrink-0">
                                 <button
                                     type="button"
                                     onClick={() => setIsModalOpen(false)}
@@ -1982,6 +2192,26 @@ export default function ProjectDetailPage() {
                     </div>
                 )
             }
+
+            {activeColorMenu && (
+                <>
+                    <div className="fixed inset-0 z-[120]" onClick={() => setActiveColorMenu(null)} />
+                    <div
+                        className="fixed z-[121] bg-white rounded-lg border border-gray-200 shadow-xl p-2 grid grid-cols-4 gap-2"
+                        style={{ top: `${activeColorMenu.top + 8}px`, left: `${activeColorMenu.left}px` }}
+                    >
+                        {COLORS.map(color => (
+                            <button
+                                key={color}
+                                type="button"
+                                className="w-5 h-5 rounded-full border border-gray-200 hover:scale-110 transition-transform"
+                                style={{ backgroundColor: color }}
+                                onClick={() => handleColorChange(color)}
+                            />
+                        ))}
+                    </div>
+                </>
+            )}
 
             {/* Progress Update Modal */}
             {
@@ -2006,7 +2236,7 @@ export default function ProjectDetailPage() {
 
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">Progress (%)</label>
-                                    <div className="flex items-center gap-4">
+                                    <div className="flex min-w-0 flex-1 items-start gap-4">
                                         <input
                                             type="range"
                                             min="0"

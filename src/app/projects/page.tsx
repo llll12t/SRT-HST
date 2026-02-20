@@ -21,7 +21,10 @@ import {
     Loader2,
     AlertTriangle,
     BarChart3,
-    GanttChartSquare
+    GanttChartSquare,
+    ShoppingBag,
+    CalendarDays,
+    ListTodo
 } from 'lucide-react';
 import { Project } from '@/types/construction';
 import { getProjects, createProject, updateProject, deleteProject } from '@/lib/firestore';
@@ -90,6 +93,7 @@ export default function ProjectsPage() {
     // Filter projects
     const filteredProjects = projects.filter(project => {
         const matchesSearch = project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            (project.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
             (project.description || '').toLowerCase().includes(searchQuery.toLowerCase());
 
         let matchesStatus = true;
@@ -135,7 +139,7 @@ export default function ProjectsPage() {
         setEditingProject(project);
         setFormData({
             name: project.name,
-            code: (project as any).code || '',
+            code: project.code || '',
             owner: project.owner,
             location: (project as any).location || '',
             description: project.description || '',
@@ -158,6 +162,7 @@ export default function ProjectsPage() {
                 // Update existing project
                 await updateProject(editingProject.id, {
                     name: formData.name,
+                    code: formData.code.trim(),
                     owner: formData.owner,
                     description: formData.description,
                     startDate: formData.startDate,
@@ -168,6 +173,7 @@ export default function ProjectsPage() {
                 // Create new project
                 await createProject({
                     name: formData.name,
+                    code: formData.code.trim(),
                     owner: formData.owner,
                     description: formData.description,
                     startDate: formData.startDate,
@@ -237,7 +243,7 @@ export default function ProjectsPage() {
                 {['admin', 'project_manager'].includes(user?.role || '') && (
                     <button
                         onClick={openCreateModal}
-                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-sm hover:bg-blue-700 transition-colors flex items-center gap-2"
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors flex items-center gap-2"
                     >
                         <Plus className="w-4 h-4" />
                         สร้างโครงการใหม่
@@ -247,26 +253,26 @@ export default function ProjectsPage() {
 
             {/* Quick Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="bg-white rounded-sm border border-gray-300 p-4">
+                <div className="bg-white rounded-md border border-gray-300 p-4">
                     <p className="text-gray-600 text-xs font-medium">โครงการทั้งหมด</p>
                     <p className="text-2xl font-semibold text-gray-900 mt-1">{stats.total}</p>
                 </div>
-                <div className="bg-white rounded-sm border border-gray-300 p-4">
+                <div className="bg-white rounded-md border border-gray-300 p-4">
                     <p className="text-gray-600 text-xs font-medium">กำลังดำเนินการ</p>
                     <p className="text-2xl font-semibold text-blue-600 mt-1">{stats.inProgress}</p>
                 </div>
-                <div className="bg-white rounded-sm border border-gray-300 p-4">
+                <div className="bg-white rounded-md border border-gray-300 p-4">
                     <p className="text-gray-600 text-xs font-medium">เสร็จสิ้น</p>
                     <p className="text-2xl font-semibold text-green-600 mt-1">{stats.completed}</p>
                 </div>
-                <div className="bg-white rounded-sm border border-gray-300 p-4">
+                <div className="bg-white rounded-md border border-gray-300 p-4">
                     <p className="text-gray-600 text-xs font-medium">วางแผน</p>
                     <p className="text-2xl font-semibold text-gray-600 mt-1">{stats.planning}</p>
                 </div>
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-sm border border-gray-300 p-4 flex flex-col lg:flex-row gap-3">
+            <div className="bg-white rounded-md border border-gray-300 p-4 flex flex-col lg:flex-row gap-3">
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                     <input
@@ -274,14 +280,14 @@ export default function ProjectsPage() {
                         placeholder="ค้นหาโครงการ..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors"
                     />
                 </div>
 
                 <select
                     value={statusFilter}
                     onChange={(e) => setStatusFilter(e.target.value as StatusType)}
-                    className="px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors font-medium text-gray-700"
+                    className="px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors font-medium text-gray-700"
                 >
                     <option value="active">⚡ ดำเนินการอยู่ (Active)</option>
                     <option value="all">ทั้งหมด (All)</option>
@@ -292,7 +298,7 @@ export default function ProjectsPage() {
                     <option value="completed">เสร็จสิ้น</option>
                 </select>
 
-                <div className="flex items-center bg-white border border-gray-300 rounded-sm overflow-hidden">
+                <div className="flex items-center bg-white border border-gray-300 rounded-md overflow-hidden">
                     <button
                         onClick={() => setViewMode('grid')}
                         className={`px-3 py-2 text-sm ${viewMode === 'grid' ? 'bg-gray-100 text-gray-900 font-medium' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'}`}
@@ -333,150 +339,183 @@ export default function ProjectsPage() {
                     </div>
                 ) : viewMode === 'grid' ? (
                     /* Projects Grid */
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                         {filteredProjects.map((project) => {
                             const statusConfig = getStatusConfig(project.status);
-                            const isCompleted = project.status === 'completed';
-                            const isOnHold = project.status === 'on-hold';
+
+                            // Calculate days remaining/duration for display
+                            const duration = Math.max(0, differenceInDays(parseISO(project.endDate), parseISO(project.startDate)) + 1);
 
                             return (
                                 <div
                                     key={project.id}
-                                    className={`
-                                        rounded-sm border p-5 transition-all group relative overflow-hidden bg-white
-                                        ${isCompleted ? 'border-green-300 hover:border-green-500' :
-                                            isOnHold ? 'border-amber-300 opacity-90 hover:border-amber-500' :
-                                                'border-gray-200 hover:border-gray-600'}
-                                    `}
+                                    className="group relative bg-white rounded-lg border border-gray-200 transition-all duration-300 flex flex-col overflow-hidden"
                                 >
-                                    {isCompleted && (
-                                        <div className="absolute right-0 top-0 w-20 h-20 overflow-hidden pointer-events-none">
-                                            <div className="absolute top-[10px] right-[-30px] w-[100px] h-[30px] bg-green-500/10 -rotate-45 transform" />
-                                        </div>
-                                    )}
+                                    {/* Status Stripe (Left) */}
+                                    <div className={`absolute left-0 top-0 bottom-0 w-1 transition-colors ${project.status === 'completed' ? 'bg-green-500' :
+                                        project.status === 'in-progress' ? 'bg-blue-600' :
+                                            project.status === 'on-hold' ? 'bg-amber-500' : 'bg-gray-300'
+                                        }`} />
 
-                                    {/* Header */}
-                                    <div className="flex items-start justify-between mb-3 relative z-10">
-                                        <div className="flex items-center gap-3">
-                                            <div className={`w-10 h-10 rounded-lg flex items-center justify-center
-                                                ${isCompleted ? 'bg-green-100 text-green-600' :
-                                                    isOnHold ? 'bg-amber-100 text-amber-600' :
-                                                        'bg-blue-50 text-blue-600'}
-                                            `}>
-                                                <Building2 className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <h3 className={`font-medium ${isCompleted ? 'text-green-900' : 'text-gray-900'}`}>
-                                                    {project.name}
-                                                </h3>
-                                                <p className="text-xs text-gray-500">{project.owner}</p>
-                                            </div>
-                                        </div>
-                                        <div className="relative">
-                                            {['admin', 'project_manager'].includes(user?.role || '') && (
-                                                <button
-                                                    onClick={() => setDeleteConfirm(deleteConfirm === project.id ? null : project.id)}
-                                                    className="p-1 hover:bg-gray-100 rounded text-gray-400"
-                                                >
-                                                    <MoreVertical className="w-4 h-4" />
-                                                </button>
-                                            )}
-
-                                            {/* Dropdown Menu */}
-                                            {deleteConfirm === project.id && (
-                                                <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-10 w-32">
-                                                    <button
-                                                        onClick={() => { openEditModal(project); setDeleteConfirm(null); }}
-                                                        className="w-full px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 flex items-center gap-2"
-                                                    >
-                                                        <Edit2 className="w-3.5 h-3.5" />
-                                                        แก้ไข
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDeleteClick(project)}
-                                                        className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                                    >
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                        ลบ
-                                                    </button>
+                                    <div className="p-5 flex flex-col h-full pl-6">
+                                        {/* Header */}
+                                        <div className="flex justify-between items-start mb-4">
+                                            <div className="flex-1 min-w-0 pr-4">
+                                                <Link href={`/projects/${project.id}`} className="block">
+                                                    <h3 className="text-base font-bold text-gray-900 leading-tight truncate group-hover:text-blue-700 transition-colors" title={project.name}>
+                                                        {project.name}
+                                                    </h3>
+                                                </Link>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <Building2 className="w-3 h-3 text-gray-400" />
+                                                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide truncate">{project.owner}</span>
                                                 </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Description */}
-                                    {project.description && (
-                                        <p className="text-sm text-gray-600 mb-3 line-clamp-2">{project.description}</p>
-                                    )}
-
-                                    {/* Progress */}
-                                    <div className="mb-4">
-                                        <div className="flex items-center justify-between text-sm mb-1.5">
-                                            <span className="text-gray-600">Progress</span>
-                                            <span className={`font-medium ${project.overallProgress === 100 ? 'text-green-600' :
-                                                project.overallProgress >= 50 ? 'text-blue-600' :
-                                                    'text-gray-700'
-                                                }`}>
-                                                {project.overallProgress}%
-                                            </span>
-                                        </div>
-                                        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full rounded-full transition-all ${project.overallProgress === 100 ? 'bg-green-500' :
-                                                    project.overallProgress >= 50 ? 'bg-blue-500' :
-                                                        project.overallProgress > 0 ? 'bg-amber-500' :
-                                                            'bg-gray-300'
-                                                    }`}
-                                                style={{ width: `${project.overallProgress}%` }}
-                                            />
-                                        </div>
-                                    </div>
-
-                                    {/* Meta Info */}
-                                    <div className="flex items-center gap-3 text-sm text-gray-600 mb-4">
-                                        <div className="flex items-center gap-1.5">
-                                            <Calendar className="w-3.5 h-3.5" />
-                                            <span>{formatDate(project.startDate)}</span>
-                                        </div>
-                                        <span>→</span>
-                                        <span>{formatDate(project.endDate)}</span>
-                                        <span className="text-gray-400">
-                                            ({Math.max(0, differenceInDays(parseISO(project.endDate), parseISO(project.startDate)) + 1)} วัน)
-                                        </span>
-                                    </div>
-
-                                    {/* Footer */}
-                                    <div className="flex items-center justify-between pt-3 border-t border-gray-100">
-                                        <div className="flex items-center gap-2">
-                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border inline-flex items-center gap-1 ${statusConfig.class}`}>
-                                                {statusConfig.icon}
-                                                {statusConfig.label}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <div className="flex items-center gap-2">
-                                                <Link
-                                                    href={`/scurve?project=${project.id}`}
-                                                    className="px-2.5 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 flex items-center gap-1.5 shadow-sm transition-all hover:shadow-md"
-                                                    title="S-Curve"
-                                                >
-                                                    <BarChart3 className="w-3.5 h-3.5" />
-                                                    S-Curve
-                                                </Link>
-                                                <Link
-                                                    href={`/gantt?projectId=${project.id}`}
-                                                    className="px-2.5 py-1.5 text-xs font-medium text-white bg-teal-600 rounded-md hover:bg-teal-700 flex items-center gap-1.5 shadow-sm transition-all hover:shadow-md"
-                                                    title="Gantt Chart"
-                                                >
-                                                    <GanttChartSquare className="w-3.5 h-3.5" />
-                                                    Gantt
-                                                </Link>
+                                                {project.code && (
+                                                    <p className="text-[11px] text-gray-500 mt-1 font-medium truncate">
+                                                        เลขที่โครงการ: {project.code}
+                                                    </p>
+                                                )}
                                             </div>
+
+                                            {/* Menu & Status */}
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold border ${statusConfig.class}`}>
+                                                    {statusConfig.label}
+                                                </span>
+
+                                                <div className="relative">
+                                                    {['admin', 'project_manager'].includes(user?.role || '') && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                setDeleteConfirm(deleteConfirm === project.id ? null : project.id);
+                                                            }}
+                                                            className="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                                                        >
+                                                            <MoreVertical className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+
+                                                    {/* Dropdown Menu */}
+                                                    {deleteConfirm === project.id && (
+                                                        <div className="absolute right-0 top-6 bg-white border border-gray-200 rounded shadow-lg py-1 z-20 w-32">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    openEditModal(project);
+                                                                    setDeleteConfirm(null);
+                                                                }}
+                                                                className="w-full px-3 py-2 text-left text-xs text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                                            >
+                                                                <Edit2 className="w-3 h-3" />
+                                                                แก้ไข
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.preventDefault();
+                                                                    handleDeleteClick(project);
+                                                                }}
+                                                                className="w-full px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                                            >
+                                                                <Trash2 className="w-3 h-3" />
+                                                                ลบ
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Description (Optional - can be removed for more compactness, keeping for info) */}
+                                        {project.description && (
+                                            <p className="text-xs text-gray-500 line-clamp-2 mb-4 h-8">
+                                                {project.description}
+                                            </p>
+                                        )}
+
+                                        {/* Metrics Row */}
+                                        <div className="grid grid-cols-2 gap-4 mb-4 mt-auto">
+                                            {/* Date Info */}
+                                            <div>
+                                                <p className="text-xs text-gray-400 font-medium uppercase mb-1">Timeline</p>
+                                                <div className="flex items-center gap-1.5 text-xs text-gray-700 font-medium">
+                                                    <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span>{duration} Days</span>
+                                                </div>
+                                                <p className="text-xs text-gray-400 mt-0.5 truncate">
+                                                    {formatDate(project.startDate)} - {formatDate(project.endDate)}
+                                                </p>
+                                            </div>
+
+                                            {/* Progress Info */}
+                                            <div className="flex flex-col justify-end">
+                                                <div className="flex justify-between items-end mb-1">
+                                                    <span className="text-xs text-gray-400 font-medium uppercase">Progress</span>
+                                                    <span className={`text-xs font-bold ${project.overallProgress >= 100 ? 'text-green-600' : 'text-gray-900'}`}>{project.overallProgress}%</span>
+                                                </div>
+                                                <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                                    <div
+                                                        className={`h-full rounded-full transition-all duration-1000 ${project.overallProgress >= 100 ? 'bg-green-500' :
+                                                            project.overallProgress >= 50 ? 'bg-blue-600' : 'bg-gray-700'
+                                                            }`}
+                                                        style={{ width: `${project.overallProgress}%` }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Divider */}
+                                        <div className="h-px bg-gray-100 mb-3" />
+
+                                        {/* Action Grid - Clean Business Style */}
+                                        <div className="grid grid-cols-5 gap-2">
+                                            {/* S-Curve */}
+                                            <Link
+                                                href={`/scurve?project=${project.id}`}
+                                                className="flex flex-col items-center justify-center py-2 px-1 rounded bg-indigo-50 hover:bg-indigo-100 text-indigo-700 transition-colors"
+                                                title="S-Curve Analysis"
+                                            >
+                                                <BarChart3 className="w-4 h-4 mb-1.5" />
+                                                <span className="text-xs font-semibold">S-Curve</span>
+                                            </Link>
+
+                                            {/* Gantt */}
+                                            <Link
+                                                href={`/gantt?projectId=${project.id}`}
+                                                className="flex flex-col items-center justify-center py-2 px-1 rounded bg-teal-50 hover:bg-teal-100 text-teal-700 transition-colors"
+                                                title="Gantt Chart"
+                                            >
+                                                <GanttChartSquare className="w-4 h-4 mb-1.5" />
+                                                <span className="text-xs font-semibold">Gantt</span>
+                                            </Link>
+
+                                            {/* Procurement */}
+                                            <Link
+                                                href={`/procurement/${project.id}`}
+                                                className="flex flex-col items-center justify-center py-2 px-1 rounded bg-orange-50 hover:bg-orange-100 text-orange-700 transition-colors"
+                                                title="Procurement Plan"
+                                            >
+                                                <ShoppingBag className="w-4 h-4 mb-1.5" />
+                                                <span className="text-xs font-semibold">Procure</span>
+                                            </Link>
+
+                                            {/* 4 Week */}
+                                            <Link
+                                                href={`/gantt-4w/${project.id}`}
+                                                className="flex flex-col items-center justify-center py-2 px-1 rounded bg-purple-50 hover:bg-purple-100 text-purple-700 transition-colors"
+                                                title="4 Week Lookahead"
+                                            >
+                                                <CalendarDays className="w-4 h-4 mb-1.5" />
+                                                <span className="text-xs font-semibold">4-Week</span>
+                                            </Link>
+                                            {/* Tasks (Main Project Page) */}
                                             <Link
                                                 href={`/projects/${project.id}`}
-                                                className="px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 border border-gray-200 rounded-md hover:bg-gray-200 hover:text-gray-900 transition-all flex items-center gap-1"
+                                                className="flex flex-col items-center justify-center py-2 px-1 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 transition-colors"
+                                                title="Project Tasks"
                                             >
-                                                รายละเอียด →
+                                                <ListTodo className="w-4 h-4 mb-1.5" />
+                                                <span className="text-xs font-semibold">Tasks</span>
                                             </Link>
                                         </div>
                                     </div>
@@ -486,11 +525,12 @@ export default function ProjectsPage() {
                     </div>
                 ) : (
                     /* Projects List View */
-                    <div className="bg-white rounded-sm border border-gray-300 overflow-hidden">
+                    <div className="bg-white rounded-md border border-gray-300 overflow-hidden">
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
                                 <tr>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">โครงการ</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">เลขที่โครงการ</th>
                                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">เจ้าของ</th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">Progress</th>
                                     <th className="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">สถานะ</th>
@@ -524,6 +564,9 @@ export default function ProjectsPage() {
                                                         <span className="ml-2">({Math.max(0, differenceInDays(parseISO(project.endDate), parseISO(project.startDate)) + 1)} วัน)</span>
                                                     </p>
                                                 </Link>
+                                            </td>
+                                            <td className="px-4 py-3 text-sm text-gray-700 font-medium">
+                                                {project.code || '-'}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-gray-700">{project.owner}</td>
                                             <td className="px-4 py-3">
@@ -564,6 +607,30 @@ export default function ProjectsPage() {
                                                         <GanttChartSquare className="w-3.5 h-3.5" />
                                                         Gantt
                                                     </Link>
+                                                    <Link
+                                                        href={`/procurement/${project.id}`}
+                                                        className="px-3 py-1.5 text-xs font-medium text-orange-700 bg-orange-50 border border-orange-200 rounded-md hover:bg-orange-100 transition-colors flex items-center gap-1.5"
+                                                        title="Procurement"
+                                                    >
+                                                        <ShoppingBag className="w-3.5 h-3.5" />
+                                                        Procurement
+                                                    </Link>
+                                                    <Link
+                                                        href={`/gantt-4w/${project.id}`}
+                                                        className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 border border-purple-200 rounded-md hover:bg-purple-100 transition-colors flex items-center gap-1.5"
+                                                        title="4 Week Lookahead"
+                                                    >
+                                                        <CalendarDays className="w-3.5 h-3.5" />
+                                                        4 Week
+                                                    </Link>
+                                                    <Link
+                                                        href={`/projects/${project.id}`}
+                                                        className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors flex items-center gap-1.5"
+                                                        title="Tasks"
+                                                    >
+                                                        <ListTodo className="w-3.5 h-3.5" />
+                                                        Tasks
+                                                    </Link>
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
@@ -601,7 +668,7 @@ export default function ProjectsPage() {
             {
                 isModalOpen && (
                     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                        <div className="bg-white rounded-sm w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-none border border-gray-500">
+                        <div className="bg-white rounded-md w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-none border border-gray-500">
                             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                                 <h2 className="text-lg font-semibold text-gray-900">
                                     {editingProject ? 'แก้ไขโครงการ' : 'สร้างโครงการใหม่'}
@@ -623,7 +690,18 @@ export default function ProjectsPage() {
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                         placeholder="เช่น Entrance 1 Construction"
-                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1.5">เลขที่โครงการ</label>
+                                    <input
+                                        type="text"
+                                        value={formData.code}
+                                        onChange={(e) => setFormData({ ...formData, code: e.target.value })}
+                                        placeholder="เช่น PJ-2026-001"
+                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors"
                                     />
                                 </div>
 
@@ -636,7 +714,7 @@ export default function ProjectsPage() {
                                             value={formData.owner}
                                             onChange={(e) => setFormData({ ...formData, owner: e.target.value })}
                                             placeholder="เช่น SCCC"
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors"
                                         />
                                     </div>
                                     <div>
@@ -644,7 +722,7 @@ export default function ProjectsPage() {
                                         <select
                                             value={formData.status}
                                             onChange={(e) => setFormData({ ...formData, status: e.target.value as Project['status'] })}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors"
                                         >
                                             <option value="planning">วางแผน</option>
                                             <option value="in-progress">กำลังดำเนินการ</option>
@@ -661,7 +739,7 @@ export default function ProjectsPage() {
                                         value={formData.description}
                                         onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                                         placeholder="รายละเอียดโครงการ..."
-                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors resize-none"
+                                        className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors resize-none"
                                     />
                                 </div>
 
@@ -673,7 +751,7 @@ export default function ProjectsPage() {
                                             required
                                             value={formData.startDate}
                                             onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors"
                                         />
                                     </div>
                                     <div>
@@ -683,7 +761,7 @@ export default function ProjectsPage() {
                                             required
                                             value={formData.endDate}
                                             onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-md text-sm focus:border-black transition-colors"
                                         />
                                     </div>
                                 </div>
@@ -692,14 +770,14 @@ export default function ProjectsPage() {
                                     <button
                                         type="button"
                                         onClick={() => setIsModalOpen(false)}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-sm hover:bg-gray-200 transition-colors"
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
                                     >
                                         ยกเลิก
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={saving}
-                                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-sm hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
                                     >
                                         {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                         {editingProject ? 'บันทึก' : 'สร้างโครงการ'}
@@ -714,7 +792,7 @@ export default function ProjectsPage() {
             {/* Delete Confirmation Modal */}
             {projectToDelete && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-sm w-full max-w-md p-6 border border-gray-400 shadow-none">
+                    <div className="bg-white rounded-md w-full max-w-md p-6 border border-gray-400 shadow-none">
                         <div className="flex flex-col items-center text-center">
                             <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-4">
                                 <AlertTriangle className="w-6 h-6" />
@@ -729,14 +807,14 @@ export default function ProjectsPage() {
                             <div className="flex items-center gap-3 w-full">
                                 <button
                                     onClick={() => setProjectToDelete(null)}
-                                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-sm hover:bg-gray-200"
+                                    className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200"
                                 >
                                     ยกเลิก
                                 </button>
                                 <button
                                     onClick={confirmDelete}
                                     disabled={saving}
-                                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-sm hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
+                                    className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2"
                                 >
                                     {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                     ลบโครงการ

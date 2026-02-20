@@ -1,39 +1,47 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { isSameWeek, subWeeks, parseISO } from 'date-fns';
+import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import {
     Settings,
     User,
+    Building2,
     Bell,
-    Shield,
     Database,
-    Palette,
-    Globe,
-    Mail,
-    Smartphone,
-    Key,
     Users,
     Save,
-    Camera,
     Check,
     Loader2,
     Upload,
     Download,
     Trash2,
     FileSpreadsheet,
-    Plus,
     X,
     UserPlus,
     Edit2,
     Info,
     AlertTriangle,
-    CheckCircle2
+    CheckCircle2,
+    LogOut,
+    Send
 } from 'lucide-react';
-import { getProjects, getAllTasks, seedSampleData, addProject, addTask, clearAllData, getMembers, createMember, updateMember, deleteMember } from '@/lib/firestore';
+import {
+    getWeeklyCostStats,
+    generateWeeklyReportFlexMessage
+} from '@/lib/report-service';
+import {
+    generateTasksFlexMessage,
+    generateProjectProgressFlexMessage,
+    generateProcurementFlexMessage
+} from '@/lib/line-flex-templates';
+import { sendLineFlexMessageAction } from '@/app/actions/line';
+import { getProjects, getAllTasks, seedSampleData, seedFullDemoProject, addProject, addTask, clearAllData, getMembers, createMember, updateMember, deleteMember, getUserSettings, saveUserSettings } from '@/lib/firestore';
 import { Task, Project, Member } from '@/types/construction';
 import { useAuth } from '@/contexts/AuthContext';
 
-type TabType = 'profile' | 'members' | 'system';
+type TabType = 'profile' | 'notifications' | 'company' | 'members' | 'system';
 
 interface UserSettings {
     profile: {
@@ -53,6 +61,13 @@ interface UserSettings {
         newComment: boolean;
         reportComplete: boolean;
         deadline: boolean;
+        telegramEnabled: boolean;
+        telegramBotToken: string;
+        telegramChatId: string;
+        lineEnabled: boolean;
+        lineChannelAccessToken: string;
+        lineGroupId: string;
+        lineUserIds: string[];
     };
     appearance: {
         theme: 'light' | 'dark' | 'system';
@@ -62,6 +77,7 @@ interface UserSettings {
     company: {
         name: string;
         taxId: string;
+        logoBase64: string;
     };
 }
 
@@ -82,7 +98,14 @@ const defaultSettings: UserSettings = {
         progressUpdate: true,
         newComment: true,
         reportComplete: false,
-        deadline: true
+        deadline: true,
+        telegramEnabled: false,
+        telegramBotToken: '',
+        telegramChatId: '',
+        lineEnabled: false,
+        lineChannelAccessToken: '',
+        lineGroupId: '',
+        lineUserIds: []
     },
     appearance: {
         theme: 'light',
@@ -91,12 +114,35 @@ const defaultSettings: UserSettings = {
     },
     company: {
         name: 'SRT-HST Construction Co., Ltd.',
-        taxId: '0105562012345'
+        taxId: '0105562012345',
+        logoBase64: ''
     }
 };
 
+const mergeSettingsWithDefault = (stored: Partial<UserSettings>): UserSettings => ({
+    ...defaultSettings,
+    ...stored,
+    profile: {
+        ...defaultSettings.profile,
+        ...(stored.profile || {})
+    },
+    notifications: {
+        ...defaultSettings.notifications,
+        ...(stored.notifications || {})
+    },
+    appearance: {
+        ...defaultSettings.appearance,
+        ...(stored.appearance || {})
+    },
+    company: {
+        ...defaultSettings.company,
+        ...(stored.company || {})
+    }
+});
+
 export default function SettingsPage() {
-    const { user, refreshUser } = useAuth();
+    const router = useRouter();
+    const { user, refreshUser, logout } = useAuth();
     const [activeTab, setActiveTab] = useState<TabType>('profile');
     const [settings, setSettings] = useState<UserSettings>(defaultSettings);
     const [saving, setSaving] = useState(false);
@@ -104,8 +150,12 @@ export default function SettingsPage() {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState({ projects: 0, tasks: 0 });
     const [seeding, setSeeding] = useState(false);
+    const [seedingFullDemo, setSeedingFullDemo] = useState(false);
     const [importing, setImporting] = useState(false);
     const [clearing, setClearing] = useState(false);
+    const [sendingTelegram, setSendingTelegram] = useState(false);
+    const [sendingLine, setSendingLine] = useState(false);
+
 
     // Alert Dialog State
     const [alertDialog, setAlertDialog] = useState<{
@@ -130,18 +180,7 @@ export default function SettingsPage() {
     const [memberForm, setMemberForm] = useState({ name: '', email: '', phone: '', role: 'viewer' as Member['role'] });
     const [savingMember, setSavingMember] = useState(false);
 
-    // Load settings from localStorage and fetch members
-    useEffect(() => {
-        const savedSettings = localStorage.getItem('srt-hst-settings');
-        if (savedSettings) {
-            setSettings(JSON.parse(savedSettings));
-        }
-        fetchStats();
-        fetchMembers();
-        setLoading(false);
-    }, []);
-
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         try {
             const [projects, tasks] = await Promise.all([
                 getProjects(),
@@ -151,9 +190,9 @@ export default function SettingsPage() {
         } catch (error) {
             console.error('Error fetching stats:', error);
         }
-    };
+    }, []);
 
-    const fetchMembers = async () => {
+    const fetchMembers = useCallback(async (matchEmail?: string) => {
         try {
             const membersData = await getMembers();
             setMembers(membersData);
@@ -164,7 +203,10 @@ export default function SettingsPage() {
 
             // 2. If no link yet, try matching email
             if (!match) {
-                match = membersData.find(m => m.email === settings.profile.email);
+                const normalizedMatchEmail = (matchEmail || '').trim().toLowerCase();
+                if (normalizedMatchEmail) {
+                    match = membersData.find(m => (m.email || '').toLowerCase() === normalizedMatchEmail);
+                }
             }
 
             // 3. Fallback: Default to first Admin or first member if we have data (for demo purposes if no match found)
@@ -190,15 +232,94 @@ export default function SettingsPage() {
         } catch (error) {
             console.error('Error fetching members:', error);
         }
-    };
+    }, [currentMemberId]);
+
+    // Load local settings and base data
+    useEffect(() => {
+        let cancelled = false;
+
+        const initialize = async () => {
+            setLoading(true);
+            let nextSettings = defaultSettings;
+
+            const savedSettings = localStorage.getItem('srt-hst-settings');
+            try {
+                if (savedSettings) {
+                    const parsed = JSON.parse(savedSettings) as Partial<UserSettings>;
+                    nextSettings = mergeSettingsWithDefault(parsed);
+                }
+            } catch (error) {
+                console.error('Failed to parse settings:', error);
+                nextSettings = defaultSettings;
+            }
+
+            if (!cancelled) {
+                setSettings(nextSettings);
+            }
+
+            await Promise.all([
+                fetchStats(),
+                fetchMembers(nextSettings.profile.email)
+            ]);
+
+            if (!cancelled) {
+                setLoading(false);
+            }
+        };
+
+        initialize();
+
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Sync cloud settings when user session is ready
+    useEffect(() => {
+        let cancelled = false;
+
+        const syncCloudSettings = async () => {
+            if (!user?.id) return;
+
+            try {
+                const cloudSettings = await getUserSettings(user.id);
+                // IF no settings found in cloud, skip overriding local
+                if (!cloudSettings || Object.keys(cloudSettings).length === 0 || cancelled) return;
+
+                const merged = mergeSettingsWithDefault(cloudSettings as Partial<UserSettings>);
+                setSettings(merged);
+
+                // ALSO WE SHOULD SAVE TO LOCAL STORAGE SO WE STAY IN SYNC
+                localStorage.setItem('srt-hst-settings', JSON.stringify(merged));
+
+                await fetchMembers(merged.profile.email);
+            } catch (error) {
+                console.error('Failed to load settings from Firebase:', error);
+            }
+        };
+
+        syncCloudSettings();
+
+        return () => {
+            cancelled = true;
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     const handleSave = async () => {
         setSaving(true);
         try {
             // 1. Save local settings
             localStorage.setItem('srt-hst-settings', JSON.stringify(settings));
+            window.dispatchEvent(new CustomEvent('srt-hst-settings-updated'));
 
-            // 2. Update real member data if linked
+            // 2. Save all settings to Firebase (including company)
+            if (user?.id) {
+                await saveUserSettings(user.id, settings as unknown as Record<string, unknown>);
+            }
+
+            // 3. Update real member data if linked
             if (currentMemberId) {
                 await updateMember(currentMemberId, {
                     name: settings.profile.name,
@@ -209,7 +330,7 @@ export default function SettingsPage() {
                 });
 
                 // Refresh members to reflect changes in list
-                await fetchMembers();
+                await fetchMembers(settings.profile.email);
             }
 
             setSaved(true);
@@ -232,16 +353,61 @@ export default function SettingsPage() {
         setSettings(prev => ({ ...prev, profile: { ...prev.profile, [field]: value } }));
     };
 
-    const updateNotification = (field: keyof UserSettings['notifications'], value: boolean) => {
+    const updateNotification = <K extends keyof UserSettings['notifications']>(
+        field: K,
+        value: UserSettings['notifications'][K]
+    ) => {
         setSettings(prev => ({ ...prev, notifications: { ...prev.notifications, [field]: value } }));
-    };
-
-    const updateAppearance = (field: keyof UserSettings['appearance'], value: string) => {
-        setSettings(prev => ({ ...prev, appearance: { ...prev.appearance, [field]: value } }));
     };
 
     const updateCompany = (field: keyof UserSettings['company'], value: string) => {
         setSettings(prev => ({ ...prev, company: { ...prev.company, [field]: value } }));
+    };
+
+    const handleCompanyLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'กรุณาเลือกไฟล์รูปภาพเท่านั้น',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+            e.target.value = '';
+            return;
+        }
+
+        try {
+            const base64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ''));
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+            updateCompany('logoBase64', base64);
+        } catch (error) {
+            console.error('Error converting logo to base64:', error);
+            setAlertDialog({
+                isOpen: true,
+                title: 'ข้อผิดพลาด',
+                message: 'ไม่สามารถแปลงไฟล์โลโก้ได้',
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+        } finally {
+            e.target.value = '';
+        }
+    };
+
+    const handleLogout = async () => {
+        try {
+            await logout();
+        } finally {
+            router.push('/login');
+        }
     };
 
     const handleSeedData = async () => {
@@ -274,6 +440,44 @@ export default function SettingsPage() {
                     });
                 } finally {
                     setSeeding(false);
+                }
+            },
+            onCancel: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+        });
+    };
+
+    const handleSeedFullDemoProject = async () => {
+        setAlertDialog({
+            isOpen: true,
+            title: 'Create Full Demo Project',
+            message: 'Do you want to create a complete demo project with tasks, expenses, and weekly logs?',
+            type: 'confirm',
+            onConfirm: async () => {
+                setAlertDialog(prev => ({ ...prev, isOpen: false }));
+                setSeedingFullDemo(true);
+                try {
+                    const result = await seedFullDemoProject();
+                    await fetchStats();
+                    setAlertDialog({
+                        isOpen: true,
+                        title: result.created ? 'Success' : 'Info',
+                        message: result.created
+                            ? `Project created\n- Tasks: ${result.taskCount}\n- Expenses: ${result.expenseCount}\n- Weekly Logs: ${result.weeklyLogCount}`
+                            : result.message,
+                        type: result.created ? 'success' : 'info',
+                        onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+                } catch (error) {
+                    console.error('Error creating full demo project:', error);
+                    setAlertDialog({
+                        isOpen: true,
+                        title: 'Error',
+                        message: 'Failed to create full demo project',
+                        type: 'error',
+                        onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                    });
+                } finally {
+                    setSeedingFullDemo(false);
                 }
             },
             onCancel: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
@@ -324,10 +528,10 @@ export default function SettingsPage() {
                     const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
 
                     // Parse data rows
-                    const data: any[] = [];
+                    const data: Record<string, string>[] = [];
                     for (let i = 1; i < lines.length; i++) {
                         const values = lines[i].split(',').map(v => v.trim().replace(/^"|"$/g, ''));
-                        const row: any = {};
+                        const row: Record<string, string> = {};
                         headers.forEach((header, idx) => {
                             row[header] = values[idx] || '';
                         });
@@ -360,14 +564,14 @@ export default function SettingsPage() {
                         const category = row['Category'] || row['category'] || row['No.'] ? `Group ${row['No.']}` : 'Imported Tasks';
 
                         // Date Parsing
-                        const parseDate = (val: any) => {
+                        const parseDate = (val: unknown) => {
                             if (!val) return null;
-                            const d = new Date(val);
+                            const d = new Date(String(val));
                             return isNaN(d.getTime()) ? null : d;
                         };
 
-                        let start = parseDate(row['Start'] || row['planStartDate'] || row['StartDate']) || new Date();
-                        let end = parseDate(row['End'] || row['planEndDate'] || row['EndDate']) || new Date();
+                        const start = parseDate(row['Start'] || row['planStartDate'] || row['StartDate']) || new Date();
+                        const end = parseDate(row['End'] || row['planEndDate'] || row['EndDate']) || new Date();
 
                         if (start < minDate) minDate = start;
                         if (end > maxDate) maxDate = end;
@@ -551,6 +755,216 @@ export default function SettingsPage() {
     };
 
     // Member functions
+    const handleSendTelegramTest = async () => {
+        if (!settings.notifications.telegramBotToken || !settings.notifications.telegramChatId) {
+            setAlertDialog({
+                isOpen: true,
+                title: 'ไม่สามารถส่งข้อความได้',
+                message: 'กรุณากรอก Telegram Bot Token และ Chat ID ให้ครบถ้วนก่อนส่ง',
+                type: 'warning',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+            return;
+        }
+
+        setSendingTelegram(true);
+        try {
+            // Send test message
+            const response = await fetch(`https://api.telegram.org/bot${settings.notifications.telegramBotToken}/sendMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    chat_id: settings.notifications.telegramChatId,
+                    text: '🔔 ทดสอบการแจ้งเตือนจาก SRT-HST App\n\nระบบเชื่อมต่อ Telegram เรียบร้อยแล้ว!',
+                    parse_mode: 'Markdown'
+                })
+            });
+
+            if (response.ok) {
+                setAlertDialog({
+                    isOpen: true,
+                    title: 'สำเร็จ',
+                    message: 'ส่งข้อความทดสอบไปยัง Telegram เรียบร้อยแล้ว',
+                    type: 'success',
+                    onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                });
+            } else {
+                throw new Error('Telegram API Error: ' + response.statusText);
+            }
+        } catch (error: any) {
+            console.error('Failed to send Telegram message:', error);
+            setAlertDialog({
+                isOpen: true,
+                title: 'เกิดข้อผิดพลาด',
+                message: `ไม่สามารถส่งข้อความได้: ${error.message || 'Unknown error'}`,
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+        } finally {
+            setSendingTelegram(false);
+        }
+    };
+
+    const handleSendLineTest = async () => {
+        if (!settings.notifications.lineChannelAccessToken) {
+            setAlertDialog({
+                isOpen: true,
+                title: 'ไม่สามารถส่งข้อความได้',
+                message: 'กรุณากรอก LINE Messaging API Token ก่อนส่ง',
+                type: 'warning',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+            return;
+        }
+
+        const targets = [];
+        if (settings.notifications.lineGroupId) targets.push(settings.notifications.lineGroupId);
+        if (settings.notifications.lineUserIds && settings.notifications.lineUserIds.length > 0) {
+            targets.push(...settings.notifications.lineUserIds.filter(id => id.trim() !== ''));
+        }
+
+        if (targets.length === 0) {
+            setAlertDialog({
+                isOpen: true,
+                title: 'ไม่สามารถส่งข้อความได้',
+                message: 'กรุณากรอก Group ID หรือ User ID อย่างน้อย 1 รายการ',
+                type: 'warning',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+            return;
+        }
+
+        setSendingLine(true);
+        try {
+            // Fetch stats and tasks for demo reports
+            const { stats, project } = await getWeeklyCostStats('all');
+            const tasks = await getAllTasks();
+
+            // 1. Weekly S-Curve Report
+            const sCurveMessage = generateWeeklyReportFlexMessage(stats, project, new Date());
+
+            // 2. Project Progress Summary
+            const progressMessage = project
+                ? generateProjectProgressFlexMessage(project)
+                : generateProjectProgressFlexMessage({ name: 'สรุปทุกโครงการ', overallProgress: stats.totalBudget > 0 ? (stats.earnedToDate / stats.totalBudget) * 100 : 0 } as any);
+
+            const now = new Date();
+            const lastWeek = subWeeks(now, 1);
+
+            // 3. This Week Tasks (งานแผนสัปดาห์นี้) - Tasks that are planned/active this week
+            const thisWeekTasks = tasks.filter(t => {
+                if (!t.planStartDate || !t.planEndDate) return false;
+                try {
+                    const start = parseISO(t.planStartDate);
+                    const end = parseISO(t.planEndDate);
+                    return t.status !== 'completed' &&
+                        (isSameWeek(start, now, { weekStartsOn: 1 }) ||
+                            isSameWeek(end, now, { weekStartsOn: 1 }) ||
+                            (start <= now && end >= now));
+                } catch { return false; }
+            });
+            const thisWeekMessage = generateTasksFlexMessage('📅 แผนงานสัปดาห์นี้', thisWeekTasks, project, '#2563eb');
+
+            // 4. Last Week Tasks (งานสัปดาห์ที่ผ่านมา)
+            const lastWeekTasks = tasks.filter(t => {
+                if (!t.planStartDate || !t.planEndDate) return false;
+                try {
+                    const start = parseISO(t.planStartDate);
+                    const end = parseISO(t.planEndDate);
+                    return (isSameWeek(start, lastWeek, { weekStartsOn: 1 }) ||
+                        isSameWeek(end, lastWeek, { weekStartsOn: 1 }) ||
+                        (start <= lastWeek && end >= lastWeek));
+                } catch { return false; }
+            });
+            const lastWeekMessage = generateTasksFlexMessage('⏮️ งานสัปดาห์ที่ผ่านมา', lastWeekTasks, project, '#64748b');
+
+            // 5. Procurement Alerts
+            const procTasks = tasks.filter(t => t.procurementStatus && t.procurementStatus !== 'delivered' && t.dateOfUse);
+            const procMessage = generateProcurementFlexMessage(procTasks, project);
+
+            // Send all messages in sequence to all targets
+            const messagesToSend = [
+                progressMessage,
+                sCurveMessage,
+                thisWeekMessage,
+                lastWeekMessage,
+                ...((procTasks.length > 0) ? [procMessage] : [])
+            ];
+
+            let allFailures = 0;
+
+            for (const targetId of targets) {
+                for (const message of messagesToSend) {
+                    const res = await sendLineFlexMessageAction(
+                        settings.notifications.lineChannelAccessToken,
+                        targetId,
+                        message
+                    );
+                    if (!res.success) allFailures++;
+                }
+            }
+
+            if (allFailures === 0) {
+                setAlertDialog({
+                    isOpen: true,
+                    title: 'สำเร็จ',
+                    message: `ส่งรายงานจำนวน ${messagesToSend.length} รูปแบบ ไปยัง ${targets.length} ปลายทางเรียบร้อยแล้ว`,
+                    type: 'success',
+                    onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+                });
+            } else {
+                throw new Error(`${allFailures} messages failed to send.`);
+            }
+        } catch (error: any) {
+            console.error('Failed to send Line message:', error);
+            setAlertDialog({
+                isOpen: true,
+                title: 'เกิดข้อผิดพลาด',
+                message: `การส่งข้อความบางส่วนล้มเหลว: ${error.message || 'Unknown error'}`,
+                type: 'error',
+                onConfirm: () => setAlertDialog(prev => ({ ...prev, isOpen: false }))
+            });
+        } finally {
+            setSendingLine(false);
+        }
+    };
+
+    const addLineUserId = () => {
+        setSettings(prev => ({
+            ...prev,
+            notifications: {
+                ...prev.notifications,
+                lineUserIds: [...(prev.notifications.lineUserIds || []), '']
+            }
+        }));
+    };
+
+    const updateLineUserId = (index: number, value: string) => {
+        const newIds = [...(settings.notifications.lineUserIds || [])];
+        newIds[index] = value;
+        setSettings(prev => ({
+            ...prev,
+            notifications: {
+                ...prev.notifications,
+                lineUserIds: newIds
+            }
+        }));
+    };
+
+    const removeLineUserId = (index: number) => {
+        const newIds = [...(settings.notifications.lineUserIds || [])];
+        newIds.splice(index, 1);
+        setSettings(prev => ({
+            ...prev,
+            notifications: {
+                ...prev.notifications,
+                lineUserIds: newIds
+            }
+        }));
+    };
+
     const handleAddMember = async () => {
         if (!memberForm.name || !memberForm.email) {
             setAlertDialog({
@@ -650,6 +1064,8 @@ export default function SettingsPage() {
 
     const allTabs = [
         { id: 'profile', label: 'โปรไฟล์', icon: User, roles: ['admin', 'project_manager', 'engineer', 'viewer'] },
+        { id: 'notifications', label: 'การแจ้งเตือน', icon: Bell, roles: ['admin', 'project_manager', 'engineer', 'viewer'] },
+        { id: 'company', label: 'บริษัท', icon: Building2, roles: ['admin'] },
         { id: 'members', label: 'สมาชิก', icon: Users, roles: ['admin'] },
         { id: 'system', label: 'ระบบ', icon: Database, roles: ['admin'] },
     ];
@@ -679,13 +1095,13 @@ export default function SettingsPage() {
             </div>
 
             <div className="flex flex-col lg:flex-row gap-6">
-                <div className="lg:w-56 flex-shrink-0">
-                    <div className="bg-white rounded-sm border border-gray-300 p-2">
+                <div className="lg:w-60 flex-shrink-0">
+                    <div className="bg-white rounded border border-gray-200 p-2 space-y-1">
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id as TabType)}
-                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-sm text-sm font-medium transition-colors ${activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-50'}`}
+                                className={`w-full flex items-center gap-3 px-3 py-2 rounded text-sm font-medium transition-all ${activeTab === tab.id ? 'bg-blue-50 text-blue-700 border-l-2 border-blue-600' : 'text-gray-600 hover:bg-gray-50 border-l-2 border-transparent'}`}
                             >
                                 <tab.icon className={`w-4 h-4 ${activeTab === tab.id ? 'text-blue-600' : 'text-gray-400'}`} />
                                 {tab.label}
@@ -696,10 +1112,20 @@ export default function SettingsPage() {
 
                 <div className="flex-1">
                     {activeTab === 'profile' && (
-                        <div className="bg-white rounded-sm border border-gray-300 p-6 space-y-6">
+                        <div className="bg-white rounded border border-gray-200 p-5 space-y-5">
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900">ข้อมูลโปรไฟล์</h2>
                                 <p className="text-gray-500 text-sm mt-0.5">แก้ไขข้อมูลส่วนตัวของคุณ</p>
+                            </div>
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={handleLogout}
+                                    className="px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 border border-red-200 rounded-sm hover:bg-red-100 transition-colors inline-flex items-center gap-2"
+                                >
+                                    <LogOut className="w-4 h-4" />
+                                    Logout
+                                </button>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -710,7 +1136,7 @@ export default function SettingsPage() {
                                             type="text"
                                             value={settings.profile.name}
                                             onChange={(e) => updateProfile('name', e.target.value)}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         />
                                     </div>
                                     <div>
@@ -719,7 +1145,7 @@ export default function SettingsPage() {
                                             type="text"
                                             value={settings.profile.position}
                                             onChange={(e) => updateProfile('position', e.target.value)}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         />
                                     </div>
                                     <div>
@@ -728,7 +1154,7 @@ export default function SettingsPage() {
                                             type="text"
                                             value={settings.profile.department}
                                             onChange={(e) => updateProfile('department', e.target.value)}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         />
                                     </div>
                                 </div>
@@ -740,7 +1166,7 @@ export default function SettingsPage() {
                                             type="email"
                                             value={settings.profile.email}
                                             onChange={(e) => updateProfile('email', e.target.value)}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         />
                                     </div>
                                     <div>
@@ -749,7 +1175,7 @@ export default function SettingsPage() {
                                             type="tel"
                                             value={settings.profile.phone}
                                             onChange={(e) => updateProfile('phone', e.target.value)}
-                                            className="w-full px-3 py-2 bg-white border border-gray-300 rounded-sm text-sm focus:border-black transition-colors"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
                                         />
                                     </div>
 
@@ -758,8 +1184,230 @@ export default function SettingsPage() {
                         </div>
                     )}
 
+                    {activeTab === 'notifications' && (
+                        <div className="bg-white rounded border border-gray-200 p-5 space-y-5">
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-900">ตั้งค่าการแจ้งเตือน</h2>
+                                <p className="text-gray-500 text-sm mt-0.5">กำหนดช่องทางแจ้งเตือน และตั้งค่า LINE สำหรับพัฒนาต่อในอนาคต</p>
+                            </div>
+
+                            <div className="space-y-4 pt-4 border-t border-gray-100">
+                                <h3 className="text-sm font-semibold text-gray-900">Telegram Notification</h3>
+
+                                <label className="flex items-center justify-between gap-3 p-3 border border-gray-200 rounded-sm">
+                                    <span className="text-sm text-gray-700">เปิดใช้งานแจ้งเตือนผ่าน Telegram</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.notifications.telegramEnabled}
+                                        onChange={(e) => updateNotification('telegramEnabled', e.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                </label>
+
+                                {settings.notifications.telegramEnabled && (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Telegram Bot Token</label>
+                                            <input
+                                                type="password"
+                                                value={settings.notifications.telegramBotToken}
+                                                onChange={(e) => updateNotification('telegramBotToken', e.target.value)}
+                                                placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxYZ"
+                                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors font-mono"
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">รับ Token จาก @BotFather</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Chat ID / Channel ID</label>
+                                            <input
+                                                type="text"
+                                                value={settings.notifications.telegramChatId}
+                                                onChange={(e) => updateNotification('telegramChatId', e.target.value)}
+                                                placeholder="@channelname หรือ -100xxxxxxxxxx"
+                                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors font-mono"
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">ต้องเพิ่ม Bot เข้ากลุ่ม/Channel และกำหนดให้เป็น Admin ก่อน</p>
+                                        </div>
+
+                                        <div className="flex justify-start gap-3 pt-2">
+                                            <button
+                                                onClick={handleSendTelegramTest}
+                                                disabled={sendingTelegram || !settings.notifications.telegramBotToken || !settings.notifications.telegramChatId}
+                                                className="px-4 py-2 text-sm font-medium text-white bg-blue-500 rounded-sm hover:bg-blue-600 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {sendingTelegram ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                                ทดสอบส่งข้อความ (Test Message)
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="space-y-4 pt-4 border-t border-gray-100">
+                                <h3 className="text-sm font-semibold text-gray-900">LINE Notification (Messaging API)</h3>
+
+                                <label className="flex items-center justify-between gap-3 p-3 border border-gray-200 rounded-sm">
+                                    <span className="text-sm text-gray-700">เปิดใช้งานแจ้งเตือนผ่าน LINE</span>
+                                    <input
+                                        type="checkbox"
+                                        checked={settings.notifications.lineEnabled}
+                                        onChange={(e) => updateNotification('lineEnabled', e.target.checked)}
+                                        className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                    />
+                                </label>
+
+                                {settings.notifications.lineEnabled && (
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1.5">LINE Messaging API Token</label>
+                                            <input
+                                                type="password"
+                                                value={settings.notifications.lineChannelAccessToken}
+                                                onChange={(e) => updateNotification('lineChannelAccessToken', e.target.value)}
+                                                placeholder="Channel Access Token (Long string ending with =)"
+                                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors font-mono"
+                                            />
+                                            <p className="text-xs text-gray-500 mt-1">ใช้ Channel Access Token จาก LINE Developers Console</p>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Group ID (Target)</label>
+                                            <input
+                                                type="text"
+                                                value={settings.notifications.lineGroupId}
+                                                onChange={(e) => updateNotification('lineGroupId', e.target.value)}
+                                                placeholder="Cxxxxxxxxxxxxxxxx"
+                                                className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors font-mono"
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <div className="flex justify-between items-center mb-1.5">
+                                                <label className="block text-sm font-medium text-gray-700">User IDs (Personal)</label>
+                                                <button
+                                                    onClick={addLineUserId}
+                                                    className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+                                                >
+                                                    <UserPlus className="w-3 h-3" /> เพิ่ม User ID
+                                                </button>
+                                            </div>
+                                            <div className="space-y-2">
+                                                {(settings.notifications.lineUserIds || []).map((userId, index) => (
+                                                    <div key={index} className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={userId}
+                                                            onChange={(e) => updateLineUserId(index, e.target.value)}
+                                                            placeholder="Uxxxxxxxxxxxxxxxx"
+                                                            className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors font-mono"
+                                                        />
+                                                        <button
+                                                            onClick={() => removeLineUserId(index)}
+                                                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                                {(settings.notifications.lineUserIds || []).length === 0 && (
+                                                    <p className="text-xs text-gray-400 italic">ไม่มี User ID ที่ระบุ</p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div className="flex justify-start gap-3 pt-2">
+                                            <button
+                                                onClick={handleSendLineTest}
+                                                disabled={sendingLine || !settings.notifications.lineChannelAccessToken || (!settings.notifications.lineGroupId && (!settings.notifications.lineUserIds || settings.notifications.lineUserIds.length === 0))}
+                                                className="px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-sm hover:bg-green-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                {sendingLine ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                                Test Send (All Targets)
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'company' && (
+                        <div className="bg-white rounded border border-gray-200 p-5 space-y-5">
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-900">ข้อมูลบริษัท</h2>
+                                <p className="text-gray-500 text-sm mt-0.5">ตั้งค่าชื่อบริษัท เลขประจำตัวผู้เสียภาษี และโลโก้</p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">ชื่อบริษัท</label>
+                                        <input
+                                            type="text"
+                                            value={settings.company.name}
+                                            onChange={(e) => updateCompany('name', e.target.value)}
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">เลขประจำตัวผู้เสียภาษี</label>
+                                        <input
+                                            type="text"
+                                            value={settings.company.taxId}
+                                            onChange={(e) => updateCompany('taxId', e.target.value)}
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1.5">อัปโหลดโลโก้ (บันทึกเป็น Base64)</label>
+                                        <label className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-600 bg-white border border-blue-200 rounded-sm hover:bg-blue-50 cursor-pointer">
+                                            <Upload className="w-4 h-4" />
+                                            เลือกรูปภาพ
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={handleCompanyLogoUpload}
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-3">
+                                    <label className="block text-sm font-medium text-gray-700">ตัวอย่างโลโก้</label>
+                                    <div className="h-40 w-full border border-dashed border-gray-300 rounded-sm bg-gray-50 flex items-center justify-center overflow-hidden relative">
+                                        {settings.company.logoBase64 ? (
+                                            <Image
+                                                src={settings.company.logoBase64}
+                                                alt="Company logo preview"
+                                                fill
+                                                unoptimized
+                                                sizes="(max-width: 768px) 100vw, 40vw"
+                                                className="object-contain"
+                                            />
+                                        ) : (
+                                            <div className="text-gray-400 text-sm text-center px-4">
+                                                ยังไม่ได้อัปโหลดโลโก้
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => updateCompany('logoBase64', '')}
+                                        className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-sm hover:bg-red-50"
+                                        disabled={!settings.company.logoBase64}
+                                    >
+                                        ลบโลโก้
+                                    </button>
+                                </div>
+                            </div>
+
+                        </div>
+                    )}
+
                     {activeTab === 'system' && (
-                        <div className="bg-white rounded-sm border border-gray-300 p-6 space-y-6">
+                        <div className="bg-white rounded border border-gray-200 p-5 space-y-5">
                             <div>
                                 <h2 className="text-lg font-semibold text-gray-900">ตั้งค่าระบบ</h2>
                                 <p className="text-gray-500 text-sm mt-0.5">จัดการข้อมูลและการนำเข้า/ส่งออก</p>
@@ -814,6 +1462,14 @@ export default function SettingsPage() {
                                             + เพิ่มข้อมูลตัวอย่าง
                                         </button>
                                         <button
+                                            onClick={handleSeedFullDemoProject}
+                                            disabled={seedingFullDemo}
+                                            className="px-3 py-1.5 text-xs font-medium text-indigo-600 border border-indigo-200 rounded-sm hover:bg-indigo-50 flex items-center gap-1"
+                                        >
+                                            <Database className="w-3 h-3" />
+                                            {seedingFullDemo ? 'Creating...' : 'Create Full Demo Project'}
+                                        </button>
+                                        <button
                                             onClick={handleClearData}
                                             disabled={clearing}
                                             className="px-3 py-1.5 text-xs font-medium text-red-600 border border-red-200 rounded-sm hover:bg-red-50 flex items-center gap-1 ml-auto"
@@ -851,8 +1507,8 @@ export default function SettingsPage() {
                     )}
 
                     {/* Placeholder for other tabs to keep layout intact if user clicks them */}
-                    {activeTab !== 'profile' && activeTab !== 'system' && activeTab !== 'members' && (
-                        <div className="bg-white rounded-sm border border-gray-300 p-10 flex flex-col items-center text-center text-gray-500">
+                    {activeTab !== 'profile' && activeTab !== 'notifications' && activeTab !== 'company' && activeTab !== 'system' && activeTab !== 'members' && (
+                        <div className="bg-white rounded border border-gray-200 p-10 flex flex-col items-center text-center text-gray-500">
                             <Settings className="w-10 h-10 mb-4 text-gray-300" />
                             <p>ส่วนนี้ยังไม่เปิดให้แก้ไขในเวอร์ชัน Demo</p>
                         </div>
@@ -860,7 +1516,7 @@ export default function SettingsPage() {
 
                     {/* Members Tab */}
                     {activeTab === 'members' && (
-                        <div className="bg-white rounded-sm border border-gray-300 p-6 space-y-6">
+                        <div className="bg-white rounded border border-gray-200 p-5 space-y-5">
                             <div className="flex items-center justify-between">
                                 <div>
                                     <h2 className="text-lg font-semibold text-gray-900">จัดการสมาชิก</h2>
@@ -924,7 +1580,7 @@ export default function SettingsPage() {
                     {/* Add/Edit Member Modal */}
                     {isMemberModalOpen && (
                         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                            <div className="bg-white rounded-sm border border-gray-400 shadow-none w-full max-w-md">
+                            <div className="bg-white rounded border border-gray-200 shadow-none w-full max-w-md">
                                 <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
                                     <h2 className="text-lg font-semibold text-gray-900">
                                         {editingMember ? 'แก้ไขสมาชิก' : 'เพิ่มสมาชิกใหม่'}
@@ -1011,53 +1667,54 @@ export default function SettingsPage() {
                     )}
                 </div>
             </div>
-            {/* Alert/Confirm Modal */}
-            {alertDialog.isOpen && (
-                <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
-                        <div className="p-6 text-center">
-                            <div className={`w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center ${alertDialog.type === 'error' ? 'bg-red-100 text-red-600' :
-                                alertDialog.type === 'success' ? 'bg-green-100 text-green-600' :
-                                    alertDialog.type === 'confirm' ? 'bg-blue-100 text-blue-600' :
-                                        'bg-gray-100 text-gray-600'
-                                }`}>
-                                {alertDialog.type === 'error' && <AlertTriangle className="w-6 h-6" />}
-                                {alertDialog.type === 'success' && <CheckCircle2 className="w-6 h-6" />}
-                                {(alertDialog.type === 'confirm' || alertDialog.type === 'info') && <Info className="w-6 h-6" />}
-                                {alertDialog.type === 'warning' && <AlertTriangle className="w-6 h-6" />}
-                            </div>
+            {
+                alertDialog.isOpen && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+                        <div className="bg-white rounded-lg border border-gray-200 shadow-none max-w-sm w-full overflow-hidden scale-100 animate-in zoom-in-95 duration-200">
+                            <div className="p-6 text-center">
+                                <div className={`w-12 h-12 rounded-full mx-auto mb-4 flex items-center justify-center ${alertDialog.type === 'error' ? 'bg-red-100 text-red-600' :
+                                    alertDialog.type === 'success' ? 'bg-green-100 text-green-600' :
+                                        alertDialog.type === 'confirm' ? 'bg-blue-100 text-blue-600' :
+                                            'bg-gray-100 text-gray-600'
+                                    }`}>
+                                    {alertDialog.type === 'error' && <AlertTriangle className="w-6 h-6" />}
+                                    {alertDialog.type === 'success' && <CheckCircle2 className="w-6 h-6" />}
+                                    {(alertDialog.type === 'confirm' || alertDialog.type === 'info') && <Info className="w-6 h-6" />}
+                                    {alertDialog.type === 'warning' && <AlertTriangle className="w-6 h-6" />}
+                                </div>
 
-                            <h3 className="text-lg font-bold text-gray-900 mb-2">
-                                {alertDialog.title}
-                            </h3>
-                            <p className="text-sm text-gray-500 mb-6 whitespace-pre-line">
-                                {alertDialog.message}
-                            </p>
+                                <h3 className="text-lg font-bold text-gray-900 mb-2">
+                                    {alertDialog.title}
+                                </h3>
+                                <p className="text-sm text-gray-500 mb-6 whitespace-pre-line">
+                                    {alertDialog.message}
+                                </p>
 
-                            <div className="flex gap-3 justify-center">
-                                {(alertDialog.type === 'confirm' || alertDialog.type === 'warning') && (
+                                <div className="flex gap-3 justify-center">
+                                    {(alertDialog.type === 'confirm' || alertDialog.type === 'warning') && (
+                                        <button
+                                            onClick={alertDialog.onCancel}
+                                            className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                        >
+                                            ยกเลิก
+                                        </button>
+                                    )}
                                     <button
-                                        onClick={alertDialog.onCancel}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                        onClick={alertDialog.onConfirm}
+                                        className={`px-4 py-2 text-sm font-medium text-white rounded-lg transition-colors ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' :
+                                            alertDialog.type === 'success' ? 'bg-green-600 hover:bg-green-700' :
+                                                alertDialog.type === 'warning' ? 'bg-orange-500 hover:bg-orange-600' :
+                                                    'bg-black hover:bg-gray-800'
+                                            }`}
                                     >
-                                        ยกเลิก
+                                        ตกลง
                                     </button>
-                                )}
-                                <button
-                                    onClick={alertDialog.onConfirm}
-                                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' :
-                                        alertDialog.type === 'success' ? 'bg-green-600 hover:bg-green-700' :
-                                            alertDialog.type === 'warning' ? 'bg-orange-500 hover:bg-orange-600' :
-                                                'bg-black hover:bg-gray-800'
-                                        }`}
-                                >
-                                    ตกลง
-                                </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }

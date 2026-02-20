@@ -22,9 +22,10 @@ import {
     FolderKanban,
     Info,
 } from 'lucide-react';
-import { Task, Project, Employee } from '@/types/construction';
-import { getAllTasks, getProjects, createTask, updateTask, deleteTask, updateTaskProgress, getEmployees } from '@/lib/firestore';
+import { Task, Project, Member } from '@/types/construction';
+import { getAllTasks, getProjects, createTask, updateTask, deleteTask, updateTaskProgress, getMembers } from '@/lib/firestore';
 import { useAuth } from '@/contexts/AuthContext';
+import { todayISO, formatDateShort } from '@/lib/dateUtils';
 
 type StatusFilter = 'all' | 'completed' | 'in-progress' | 'not-started' | 'delayed';
 
@@ -35,7 +36,7 @@ export default function TasksPage() {
     const { user } = useAuth();
     const [tasks, setTasks] = useState<Task[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
-    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [members, setMembers] = useState<Member[]>([]);
     const [loading, setLoading] = useState(true);
 
     const [searchQuery, setSearchQuery] = useState('');
@@ -78,7 +79,7 @@ export default function TasksPage() {
         taskName: '',
         currentProgress: 0,
         newProgress: 0,
-        updateDate: new Date().toISOString().split('T')[0],
+        updateDate: todayISO(),
         actualStartDate: '',
         actualEndDate: '',
         reason: ''
@@ -134,14 +135,14 @@ export default function TasksPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [tasksData, projectsData, employeesData] = await Promise.all([
+            const [tasksData, projectsData, membersData] = await Promise.all([
                 getAllTasks(),
                 getProjects(),
-                getEmployees()
+                getMembers()
             ]);
             setTasks(tasksData);
             setProjects(projectsData);
-            setEmployees(employeesData);
+            setMembers(membersData);
         } catch (error) {
             console.error('Error fetching data:', error);
         } finally {
@@ -154,6 +155,11 @@ export default function TasksPage() {
         ['all', ...new Set(tasks.map(t => t.category))],
         [tasks]
     );
+
+    const getEffectiveStatus = (task: Task): Task['status'] => {
+        if ((task.progress || 0) >= 100) return 'completed';
+        return task.status;
+    };
 
     // Filter tasks
     // Filter and Sort Logic
@@ -171,7 +177,7 @@ export default function TasksPage() {
 
         // 2. Filter by Status
         if (statusFilter !== 'all') {
-            result = result.filter(t => t.status === statusFilter);
+            result = result.filter(t => getEffectiveStatus(t) === statusFilter);
         }
 
         // 3. Filter by Project
@@ -256,9 +262,9 @@ export default function TasksPage() {
     // Stats
     const stats = useMemo(() => ({
         total: tasks.length,
-        completed: tasks.filter(t => t.status === 'completed').length,
-        inProgress: tasks.filter(t => t.status === 'in-progress').length,
-        notStarted: tasks.filter(t => t.status === 'not-started').length,
+        completed: tasks.filter(t => getEffectiveStatus(t) === 'completed').length,
+        inProgress: tasks.filter(t => getEffectiveStatus(t) === 'in-progress').length,
+        notStarted: tasks.filter(t => getEffectiveStatus(t) === 'not-started').length,
     }), [tasks]);
 
     // Get project name
@@ -304,7 +310,7 @@ export default function TasksPage() {
             name: '',
             cost: 0,
             quantity: '',
-            planStartDate: new Date().toISOString().slice(0, 10),
+            planStartDate: todayISO(),
             planEndDate: '',
             planDuration: 30,
             progress: 0,
@@ -439,7 +445,7 @@ export default function TasksPage() {
             taskName: task.name,
             currentProgress: task.progress,
             newProgress: progress,
-            updateDate: task.progressUpdatedAt || new Date().toISOString().split('T')[0],
+            updateDate: task.progressUpdatedAt || todayISO(),
             actualStartDate: task.actualStartDate || '',
             actualEndDate: task.actualEndDate || '',
             reason: ''
@@ -570,9 +576,9 @@ export default function TasksPage() {
                     <button
                         key={stat.filter}
                         onClick={() => setStatusFilter(stat.filter as StatusFilter)}
-                        className={`p-4 rounded-lg border text-left transition-all ${stat.active
-                            ? 'bg-white border-blue-600 ring-1 ring-blue-600 shadow-sm'
-                            : 'bg-white border-gray-100 hover:border-gray-300 hover:shadow-sm'
+                        className={`p-4 rounded-sm border text-left transition-all ${stat.active
+                            ? 'bg-white border-blue-600 ring-1 ring-blue-600'
+                            : 'bg-white border-gray-300 hover:border-gray-300 hover'
                             }`}
                     >
                         <p className="text-gray-600 text-xs font-medium">{stat.label}</p>
@@ -582,7 +588,7 @@ export default function TasksPage() {
             </div>
 
             {/* Filters */}
-            <div className="bg-white rounded-lg border border-gray-100 p-4 flex flex-col lg:flex-row gap-3 shadow-sm">
+            <div className="bg-white rounded-sm border border-gray-300 p-4 flex flex-col lg:flex-row gap-3">
                 <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                     <input
@@ -590,14 +596,14 @@ export default function TasksPage() {
                         placeholder="ค้นหาชื่องาน..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0"
+                        className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-sm text-sm focus:border-black focus:ring-0"
                     />
                 </div>
 
                 <select
                     value={projectFilter}
                     onChange={(e) => setProjectFilter(e.target.value)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                 >
                     <option value="all">ทุกโครงการ</option>
                     {projects.map(p => (
@@ -608,7 +614,7 @@ export default function TasksPage() {
                 <select
                     value={categoryFilter}
                     onChange={(e) => setCategoryFilter(e.target.value)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                 >
                     {categories.map(cat => (
                         <option key={cat} value={cat}>
@@ -620,7 +626,7 @@ export default function TasksPage() {
                 <select
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as any)}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
                 >
                     <option value="order">เรียงตามลำดับ</option>
                     <option value="name">เรียงตามชื่อ</option>
@@ -631,18 +637,18 @@ export default function TasksPage() {
 
             {/* Table */}
             {projects.length === 0 ? (
-                <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                <div className="bg-white rounded-sm border border-gray-200 p-12 text-center">
                     <ListTodo className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-600 mb-4">กรุณาสร้างโครงการก่อน</p>
                     <Link
                         href="/projects"
-                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 inline-block"
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-sm hover:bg-blue-700 inline-block"
                     >
                         ไปหน้าโครงการ
                     </Link>
                 </div>
             ) : filteredTasks.length === 0 ? (
-                <div className="bg-white rounded-lg border border-gray-100 p-12 text-center">
+                <div className="bg-white rounded-sm border border-gray-300 p-12 text-center">
                     <ListTodo className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                     <p className="text-gray-600 mb-4">
                         {tasks.length === 0 ? 'ยังไม่มีงาน' : 'ไม่พบงานที่ค้นหา'}
@@ -650,14 +656,14 @@ export default function TasksPage() {
                     {tasks.length === 0 && ['admin', 'project_manager'].includes(user?.role || '') && (
                         <button
                             onClick={openCreateModal}
-                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-sm hover:bg-blue-700"
                         >
                             เพิ่มงานแรก
                         </button>
                     )}
                 </div>
             ) : (
-                <div className="bg-white rounded-lg border border-gray-100 overflow-hidden shadow-sm">
+                <div className="bg-white rounded-sm border border-gray-300 overflow-hidden">
                     <div className="overflow-x-auto">
                         <table className="w-full">
                             <thead className="bg-gray-50 border-b border-gray-200">
@@ -725,11 +731,11 @@ export default function TasksPage() {
                                         <td className="px-4 py-3 text-center">
                                             <div className="flex flex-col text-xs">
                                                 <span className="text-gray-600">
-                                                    แผน: {new Date(task.planStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {new Date(task.planEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                                    แผน: {formatDateShort(task.planStartDate)} - {formatDateShort(task.planEndDate)}
                                                 </span>
                                                 {task.actualStartDate && (
                                                     <span className="text-green-600 font-medium">
-                                                        จริง: {new Date(task.actualStartDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })} - {task.actualEndDate ? new Date(task.actualEndDate).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '...'}
+                                                        จริง: {formatDateShort(task.actualStartDate)} - {task.actualEndDate ? formatDateShort(task.actualEndDate) : '...'}
                                                     </span>
                                                 )}
                                             </div>
@@ -756,12 +762,12 @@ export default function TasksPage() {
                                             </div>
                                             {task.progressUpdatedAt && (
                                                 <p className="text-xs text-gray-500 mt-1 text-center">
-                                                    อัพเดท: {new Date(task.progressUpdatedAt).toLocaleDateString('th-TH', { day: '2-digit', month: '2-digit', year: '2-digit' })}
+                                                    อัพเดท: {formatDateShort(task.progressUpdatedAt)}
                                                 </p>
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-center">
-                                            {getStatusBadge(task.status)}
+                                            {getStatusBadge(getEffectiveStatus(task))}
                                         </td>
                                         <td className="px-4 py-3">
                                             <div className="flex items-center justify-center gap-1">
@@ -769,7 +775,7 @@ export default function TasksPage() {
                                                 {['admin', 'project_manager', 'engineer'].includes(user?.role || '') && task.type !== 'group' && (
                                                     <button
                                                         onClick={() => openProgressModal(task, task.progress)}
-                                                        className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200 hover:shadow-sm"
+                                                        className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-sm transition-colors border border-blue-200 hover"
                                                     >
                                                         อัปเดท
                                                     </button>
@@ -864,9 +870,9 @@ export default function TasksPage() {
             {/* Create/Edit Modal */}
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-lg border border-gray-100 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl">
+                    <div className="bg-white rounded-sm border border-gray-300 w-full max-w-3xl max-h-[90vh] flex flex-col shadow-xl">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-300">
                             <div>
                                 <h2 className="text-lg font-bold text-gray-900">
                                     {editingTask ? 'แก้ไขงาน' : 'เพิ่มงานใหม่'}
@@ -899,7 +905,7 @@ export default function TasksPage() {
                                             value={taskForm.category}
                                             onChange={(e) => setTaskForm({ ...taskForm, category: e.target.value })}
                                             placeholder="เลือกหรือพิมพ์ใหม่..."
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-sm text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                         <datalist id="category-suggestions">
                                             {[...new Set(
@@ -920,19 +926,19 @@ export default function TasksPage() {
                                             value={taskForm.subcategory}
                                             onChange={(e) => setTaskForm({ ...taskForm, subcategory: e.target.value })}
                                             placeholder="ระบุ (ถ้ามี)..."
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-sm text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                     </div>
 
                                     {/* Sub-subcategory */}
-                                    <div className="md:col-span-1 bg-blue-50/50 rounded-lg border border-blue-100 p-1">
+                                    <div className="md:col-span-1 bg-blue-50/50 rounded-sm border border-blue-100 p-1">
                                         <label className="block text-sm font-bold text-blue-700 mb-1.5">หมวดหมู่ย่อย 2 (ระดับ 3)</label>
                                         <input
                                             type="text"
                                             value={taskForm.subsubcategory}
                                             onChange={(e) => setTaskForm({ ...taskForm, subsubcategory: e.target.value })}
                                             placeholder="ระบุระดับ 3..."
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-sm text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                     </div>
 
@@ -947,7 +953,7 @@ export default function TasksPage() {
                                             value={taskForm.name}
                                             onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
                                             placeholder={taskForm.type === 'group' ? 'ชื่อหมวดหมู่ย่อย (Sub-Group)' : 'ระบุชื่องาน...'}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none transition-all"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-sm text-sm focus:border-black focus:ring-0 outline-none transition-all"
                                         />
                                     </div>
 
@@ -958,7 +964,7 @@ export default function TasksPage() {
                                             required
                                             value={taskForm.projectId}
                                             onChange={(e) => setTaskForm({ ...taskForm, projectId: e.target.value })}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-sm text-sm focus:border-black focus:ring-0 outline-none"
                                         >
                                             <option value="" disabled>เลือกโครงการ...</option>
                                             {projects.map(p => (
@@ -973,7 +979,7 @@ export default function TasksPage() {
                                         <select
                                             value={taskForm.parentTaskId}
                                             onChange={(e) => setTaskForm({ ...taskForm, parentTaskId: e.target.value })}
-                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:border-black focus:ring-0 outline-none"
+                                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-sm text-sm focus:border-black focus:ring-0 outline-none"
                                         >
                                             <option value="">หมวดหมู่หลัก</option>
                                             {tasks
@@ -994,11 +1000,11 @@ export default function TasksPage() {
                                     {/* Type */}
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1.5">ประเภท</label>
-                                        <div className="flex rounded-lg border border-gray-200 p-1 bg-gray-50/50">
+                                        <div className="flex rounded-sm border border-gray-200 p-1 bg-gray-50/50">
                                             <button
                                                 type="button"
                                                 onClick={() => setTaskForm({ ...taskForm, type: 'task' })}
-                                                className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-semibold rounded-md transition-all ${taskForm.type === 'task' ? 'bg-white text-blue-600 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-700'}`}
+                                                className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-semibold rounded-sm transition-all ${taskForm.type === 'task' ? 'bg-white text-blue-600 border border-gray-300' : 'text-gray-500 hover:text-gray-700'}`}
                                             >
                                                 <ListTodo className="w-3.5 h-3.5" />
                                                 Task
@@ -1006,7 +1012,7 @@ export default function TasksPage() {
                                             <button
                                                 type="button"
                                                 onClick={() => setTaskForm({ ...taskForm, type: 'group' })}
-                                                className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-semibold rounded-md transition-all ${taskForm.type === 'group' ? 'bg-white text-blue-600 shadow-sm border border-gray-100' : 'text-gray-500 hover:text-gray-700'}`}
+                                                className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-xs font-semibold rounded-sm transition-all ${taskForm.type === 'group' ? 'bg-white text-blue-600 border border-gray-300' : 'text-gray-500 hover:text-gray-700'}`}
                                             >
                                                 <FolderKanban className="w-3.5 h-3.5" />
                                                 Group
@@ -1031,7 +1037,7 @@ export default function TasksPage() {
                                                 <button
                                                     key={color}
                                                     type="button"
-                                                    className={`w-6 h-6 rounded-full border-2 transition-all ${(taskForm as any).color === color ? 'border-gray-900 scale-110 shadow-sm' : 'border-transparent hover:scale-110'}`}
+                                                    className={`w-6 h-6 rounded-full border-2 transition-all ${(taskForm as any).color === color ? 'border-gray-900 scale-110' : 'border-transparent hover:scale-110'}`}
                                                     style={{ backgroundColor: color }}
                                                     onClick={() => setTaskForm({ ...taskForm, color } as any)}
                                                 />
@@ -1041,7 +1047,7 @@ export default function TasksPage() {
                                 </div>
 
                                 {taskForm.type === 'group' && (
-                                    <div className="bg-blue-50 text-blue-700 text-xs p-3 rounded-lg flex items-start gap-2">
+                                    <div className="bg-blue-50 text-blue-700 text-xs p-3 rounded-sm flex items-start gap-2">
                                         <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                                         <p>สำหรับ "กลุ่ม" วันที่, ต้นทุน, และความคืบหน้าจะถูกคำนวณอัตโนมัติจากงานย่อย</p>
                                     </div>
@@ -1059,7 +1065,7 @@ export default function TasksPage() {
                                                     step="0.01"
                                                     value={taskForm.cost}
                                                     onChange={(e) => setTaskForm({ ...taskForm, cost: parseFloat(e.target.value) || 0 })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1069,7 +1075,7 @@ export default function TasksPage() {
                                                     value={taskForm.quantity}
                                                     onChange={(e) => setTaskForm({ ...taskForm, quantity: e.target.value })}
                                                     placeholder="e.g. 50 m2"
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1080,7 +1086,7 @@ export default function TasksPage() {
                                                     max="100"
                                                     value={taskForm.progress}
                                                     onChange={(e) => setTaskForm({ ...taskForm, progress: parseFloat(e.target.value) || 0 })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                         </div>
@@ -1094,7 +1100,7 @@ export default function TasksPage() {
                                                     required
                                                     value={taskForm.planStartDate}
                                                     onChange={(e) => setTaskForm({ ...taskForm, planStartDate: e.target.value })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1104,7 +1110,7 @@ export default function TasksPage() {
                                                     required
                                                     value={taskForm.planEndDate}
                                                     onChange={(e) => setTaskForm({ ...taskForm, planEndDate: e.target.value })}
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                             </div>
                                             <div>
@@ -1115,13 +1121,11 @@ export default function TasksPage() {
                                                     value={taskForm.responsible}
                                                     onChange={(e) => setTaskForm({ ...taskForm, responsible: e.target.value })}
                                                     placeholder="ระบุชื่อ..."
-                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
+                                                    className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-sm text-sm focus:bg-white focus:border-black focus:ring-0 outline-none transition-all"
                                                 />
                                                 <datalist id="member-list">
-                                                    {employees.map((employee) => (
-                                                        <option key={employee.id} value={employee.name}>
-                                                            {employee.name}{employee.position ? ` (${employee.position})` : ''}
-                                                        </option>
+                                                    {members.map((member) => (
+                                                        <option key={member.id} value={member.name}>{member.name} ({member.role})</option>
                                                     ))}
                                                 </datalist>
                                             </div>
@@ -1133,7 +1137,7 @@ export default function TasksPage() {
                         </div>
 
                         {/* Footer */}
-                        <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-gray-100 bg-gray-50 rounded-b-lg">
+                        <div className="flex items-center justify-end gap-3 px-4 py-3 border-t border-gray-300 bg-gray-50 rounded-b-lg">
                             <button
                                 type="button"
                                 onClick={() => setIsModalOpen(false)}
@@ -1145,7 +1149,7 @@ export default function TasksPage() {
                                 type="submit"
                                 form="task-form"
                                 disabled={saving}
-                                className="px-6 py-2 text-sm font-bold text-white bg-black rounded-lg hover:bg-gray-800 focus:ring-2 focus:ring-offset-1 focus:ring-gray-900 transition-all shadow-sm flex items-center gap-2"
+                                className="px-6 py-2 text-sm font-bold text-white bg-black rounded-sm hover:bg-gray-800 focus:ring-2 focus:ring-offset-1 focus:ring-gray-900 transition-all flex items-center gap-2"
                             >
                                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                                 {editingTask ? 'บันทึกการแก้ไข' : 'สร้างงานใหม่'}
@@ -1158,9 +1162,9 @@ export default function TasksPage() {
             {/* Progress Update Modal */}
             {isProgressModalOpen && (
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-lg border border-gray-100 w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+                    <div className="bg-white rounded-sm border border-gray-300 w-full max-w-lg shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
                         {/* Header */}
-                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gray-50/50">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-300 bg-gray-50/50">
                             <h2 className="text-lg font-bold text-gray-900">
                                 อัปเดทความคืบหน้า
                             </h2>
@@ -1176,7 +1180,7 @@ export default function TasksPage() {
                         <div className="p-6 overflow-y-auto custom-scrollbar">
 
                             {/* Task Name - Formal Upgrade */}
-                            <div className="mb-6 border-b border-gray-100 pb-4">
+                            <div className="mb-6 border-b border-gray-300 pb-4">
                                 <label className="block text-xs font-semibold text-gray-400 uppercase tracking-widest mb-1">
                                     Selected Task
                                 </label>
@@ -1268,7 +1272,7 @@ export default function TasksPage() {
                                                 actualEndDate: val === 100 ? (prev.actualEndDate || prev.updateDate) : ''
                                             }));
                                         }}
-                                        className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-black"
+                                        className="w-full h-1.5 bg-gray-200 rounded-sm appearance-none cursor-pointer accent-black"
                                     />
                                 </div>
                             </div>
@@ -1280,7 +1284,7 @@ export default function TasksPage() {
                                     const currentTask = tasks.find(t => t.id === progressUpdate.taskId);
                                     return (
                                         <div className="space-y-3">
-                                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest border-b border-gray-100 pb-1">Plan</p>
+                                            <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest border-b border-gray-300 pb-1">Plan</p>
                                             <div className="space-y-2">
                                                 <div className="flex justify-between text-xs">
                                                     <span className="text-gray-500">Start</span>
@@ -1323,7 +1327,7 @@ export default function TasksPage() {
                             </div>
 
                             {/* Meta & Actions */}
-                            <div className="bg-gray-50 -mx-6 -mb-6 p-4 border-t border-gray-100 mt-8">
+                            <div className="bg-gray-50 -mx-6 -mb-6 p-4 border-t border-gray-300 mt-8">
                                 <div className="grid grid-cols-2 gap-4 mb-4">
                                     <div>
                                         <label className="block text-[10px] font-medium text-gray-500 uppercase mb-1">Date</label>
@@ -1331,7 +1335,7 @@ export default function TasksPage() {
                                             type="date"
                                             value={progressUpdate.updateDate}
                                             onChange={(e) => setProgressUpdate({ ...progressUpdate, updateDate: e.target.value })}
-                                            className="w-full text-xs border-gray-200 rounded shadow-sm focus:border-black focus:ring-black"
+                                            className="w-full text-xs border-gray-200 rounded focus:border-black focus:ring-black"
                                         />
                                     </div>
                                     <div>
@@ -1341,7 +1345,7 @@ export default function TasksPage() {
                                             value={progressUpdate.reason}
                                             onChange={(e) => setProgressUpdate({ ...progressUpdate, reason: e.target.value })}
                                             placeholder="Optional"
-                                            className="w-full text-xs border-gray-200 rounded shadow-sm focus:border-black focus:ring-black"
+                                            className="w-full text-xs border-gray-200 rounded focus:border-black focus:ring-black"
                                         />
                                     </div>
                                 </div>
@@ -1356,7 +1360,7 @@ export default function TasksPage() {
                                     <button
                                         onClick={handleProgressSubmit}
                                         disabled={savingProgress || !progressUpdate.updateDate}
-                                        className="px-4 py-1.5 text-xs font-medium text-white bg-black rounded shadow-sm hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
+                                        className="px-4 py-1.5 text-xs font-medium text-white bg-black rounded hover:bg-gray-800 disabled:opacity-50 flex items-center gap-2"
                                     >
                                         {savingProgress && <Loader2 className="w-3 h-3 animate-spin" />}
                                         Save
@@ -1372,7 +1376,7 @@ export default function TasksPage() {
                 <>
                     <div className="fixed inset-0 z-[100]" onClick={() => setActiveColorMenu(null)} />
                     <div
-                        className="fixed z-[101] bg-white rounded-lg shadow-xl border border-gray-200 p-3 grid grid-cols-4 gap-2 animate-in fade-in zoom-in-95 duration-100"
+                        className="fixed z-[101] bg-white rounded-sm shadow-xl border border-gray-200 p-3 grid grid-cols-4 gap-2 animate-in fade-in zoom-in-95 duration-100"
                         style={{
                             top: `${activeColorMenu.top + 8}px`,
                             left: `${activeColorMenu.left}px`
@@ -1417,14 +1421,14 @@ export default function TasksPage() {
                                 {(alertDialog.type === 'confirm') && (
                                     <button
                                         onClick={alertDialog.onCancel}
-                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+                                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-sm hover:bg-gray-200 transition-colors"
                                     >
                                         ยกเลิก
                                     </button>
                                 )}
                                 <button
                                     onClick={alertDialog.onConfirm}
-                                    className={`px-4 py-2 text-sm font-medium text-white rounded-lg shadow-sm transition-colors ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' :
+                                    className={`px-4 py-2 text-sm font-medium text-white rounded-sm transition-colors ${alertDialog.type === 'error' ? 'bg-red-600 hover:bg-red-700' :
                                         alertDialog.type === 'success' ? 'bg-green-600 hover:bg-green-700' :
                                             'bg-black hover:bg-gray-800'
                                         }`}
