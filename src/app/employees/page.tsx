@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+    AlertTriangle,
     Briefcase,
     Loader2,
     Mail,
@@ -40,7 +41,9 @@ export default function EmployeesPage() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [deleting, setDeleting] = useState(false);
     const [form, setForm] = useState<EmployeeForm>(defaultForm);
+    const [deleteTarget, setDeleteTarget] = useState<Employee | null>(null);
 
     const canManage = useMemo(() => {
         return user?.role === 'admin' || user?.role === 'project_manager';
@@ -191,21 +194,27 @@ export default function EmployeesPage() {
         }
     };
 
-    const handleDelete = async (employeeId: string) => {
+    const handleRequestDelete = (employeeId: string) => {
         if (!canManage) return;
 
         const target = employees.find(employee => employee.id === employeeId);
         if (!target) return;
+        setDeleteTarget(target);
+    };
 
-        const confirmed = window.confirm(`ต้องการลบพนักงาน "${target.name}" หรือไม่?`);
-        if (!confirmed) return;
+    const handleConfirmDelete = async () => {
+        if (!canManage || !deleteTarget) return;
 
         try {
-            await deleteEmployee(employeeId);
+            setDeleting(true);
+            await deleteEmployee(deleteTarget.id);
             await fetchEmployees();
+            setDeleteTarget(null);
         } catch (error) {
             console.error('Error deleting employee:', error);
             alert('ไม่สามารถลบพนักงานได้');
+        } finally {
+            setDeleting(false);
         }
     };
 
@@ -219,13 +228,13 @@ export default function EmployeesPage() {
                     </h1>
                     <p className="text-sm text-gray-500 mt-1">ใช้สำหรับมอบหมายผู้รับผิดชอบงาน</p>
                 </div>
-                <div className="px-3 py-2 rounded-lg bg-blue-50 text-blue-700 text-sm font-medium">
+                <div className="px-3 py-2 rounded-sm bg-blue-50 text-blue-700 text-sm font-medium">
                     ทั้งหมด: {employees.length} คน
                 </div>
             </div>
 
             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                <div className="xl:col-span-1 bg-white border border-gray-200 rounded-lg p-5">
+                <div className="xl:col-span-1 bg-white border border-gray-300 rounded-sm p-5">
                     <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
                         <UserPlus className="w-5 h-5 text-blue-600" />
                         เพิ่มพนักงาน
@@ -237,7 +246,7 @@ export default function EmployeesPage() {
                             <input
                                 value={form.name}
                                 onChange={(e) => handleChange('name', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 placeholder="เช่น สมชาย ใจดี"
                                 disabled={!canManage || saving}
                             />
@@ -247,7 +256,7 @@ export default function EmployeesPage() {
                             <input
                                 value={form.employeeCode}
                                 onChange={(e) => handleChange('employeeCode', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 placeholder="เช่น EMP-001"
                                 disabled={!canManage || saving}
                             />
@@ -257,7 +266,7 @@ export default function EmployeesPage() {
                             <input
                                 value={form.position}
                                 onChange={(e) => handleChange('position', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 placeholder="เช่น วิศวกรสนาม"
                                 disabled={!canManage || saving}
                             />
@@ -267,7 +276,7 @@ export default function EmployeesPage() {
                             <input
                                 value={form.department}
                                 onChange={(e) => handleChange('department', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 placeholder="เช่น ก่อสร้าง"
                                 disabled={!canManage || saving}
                             />
@@ -278,7 +287,7 @@ export default function EmployeesPage() {
                                 type="email"
                                 value={form.email}
                                 onChange={(e) => handleChange('email', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 placeholder="example@company.com"
                                 disabled={!canManage || saving}
                             />
@@ -288,7 +297,7 @@ export default function EmployeesPage() {
                             <input
                                 value={form.phone}
                                 onChange={(e) => handleChange('phone', e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                                 placeholder="08x-xxx-xxxx"
                                 disabled={!canManage || saving}
                             />
@@ -299,7 +308,7 @@ export default function EmployeesPage() {
                                 type="file"
                                 accept="image/*"
                                 onChange={(e) => handleImageChange(e.target.files?.[0])}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none file:mr-3 file:px-3 file:py-1 file:border-0 file:bg-blue-50 file:text-blue-700 file:rounded-md"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm outline-none file:mr-3 file:px-3 file:py-1 file:border-0 file:bg-blue-50 file:text-blue-700 file:rounded-md"
                                 disabled={!canManage || saving}
                             />
                             {form.avatarBase64 && (
@@ -307,7 +316,7 @@ export default function EmployeesPage() {
                                     <img
                                         src={form.avatarBase64}
                                         alt="ตัวอย่างรูปพนักงาน"
-                                        className="w-12 h-12 rounded-full object-cover border border-gray-200"
+                                        className="w-12 h-12 rounded-full object-cover border border-gray-300"
                                     />
                                     <button
                                         type="button"
@@ -323,7 +332,7 @@ export default function EmployeesPage() {
                         <button
                             type="submit"
                             disabled={!canManage || saving}
-                            className="w-full mt-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
+                            className="w-full mt-2 px-4 py-2.5 rounded-sm bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
                         >
                             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                             บันทึกพนักงาน
@@ -337,7 +346,7 @@ export default function EmployeesPage() {
                     </form>
                 </div>
 
-                <div className="xl:col-span-2 bg-white border border-gray-200 rounded-lg p-5">
+                <div className="xl:col-span-2 bg-white border border-gray-300 rounded-sm p-5">
                     <h2 className="text-base font-semibold text-gray-900 mb-4">รายชื่อพนักงาน</h2>
 
                     {loading ? (
@@ -354,7 +363,7 @@ export default function EmployeesPage() {
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="border-b border-gray-200 text-gray-600">
+                                    <tr className="border-b border-gray-300 text-gray-600">
                                         <th className="text-left px-3 py-2 font-medium">รูป</th>
                                         <th className="text-left px-3 py-2 font-medium">ชื่อ</th>
                                         <th className="text-left px-3 py-2 font-medium">ตำแหน่ง</th>
@@ -371,10 +380,10 @@ export default function EmployeesPage() {
                                                     <img
                                                         src={employee.avatarBase64}
                                                         alt={employee.name}
-                                                        className="w-10 h-10 rounded-full object-cover border border-gray-200"
+                                                        className="w-10 h-10 rounded-full object-cover border border-gray-300"
                                                     />
                                                 ) : (
-                                                    <div className="w-10 h-10 rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 text-xs">
+                                                    <div className="w-10 h-10 rounded-full bg-gray-100 border border-gray-300 flex items-center justify-center text-gray-400 text-xs">
                                                         N/A
                                                     </div>
                                                 )}
@@ -404,7 +413,7 @@ export default function EmployeesPage() {
                                             <td className="px-3 py-2.5 text-gray-700">{employee.department || '-'}</td>
                                             <td className="px-3 py-2.5 text-right">
                                                 <button
-                                                    onClick={() => handleDelete(employee.id)}
+                                                    onClick={() => handleRequestDelete(employee.id)}
                                                     disabled={!canManage}
                                                     className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                                                 >
@@ -420,6 +429,41 @@ export default function EmployeesPage() {
                     )}
                 </div>
             </div>
+
+            {deleteTarget && (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+                    <div className="w-full max-w-md bg-white border border-gray-300 rounded-sm shadow-sm">
+                        <div className="px-5 py-4 border-b border-gray-200 flex items-center gap-2">
+                            <AlertTriangle className="w-5 h-5 text-red-500" />
+                            <h3 className="text-base font-semibold text-gray-900">ยืนยันการลบพนักงาน</h3>
+                        </div>
+                        <div className="px-5 py-4">
+                            <p className="text-sm text-gray-700">
+                                ต้องการลบพนักงาน <span className="font-semibold">{deleteTarget.name}</span> หรือไม่?
+                            </p>
+                        </div>
+                        <div className="px-5 py-4 border-t border-gray-200 flex items-center justify-end gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setDeleteTarget(null)}
+                                disabled={deleting}
+                                className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-sm hover:bg-gray-200 disabled:opacity-50"
+                            >
+                                ยกเลิก
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleConfirmDelete}
+                                disabled={deleting}
+                                className="px-3 py-2 text-sm font-medium text-white bg-red-600 rounded-sm hover:bg-red-700 disabled:opacity-50 inline-flex items-center gap-2"
+                            >
+                                {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                                ลบ
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

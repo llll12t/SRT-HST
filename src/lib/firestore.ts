@@ -11,10 +11,12 @@ import {
     orderBy,
     Timestamp,
     serverTimestamp,
-    writeBatch
+    writeBatch,
+    setDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { Project, Task, WeeklyLog, Member, Employee } from '@/types/construction';
+import { Project, Task, WeeklyLog, Member, Employee, Expense } from '@/types/construction';
+import { todayISO, calcDurationDays } from '@/lib/dateUtils';
 import { differenceInDays, parseISO } from 'date-fns';
 
 // Helper to remove undefined values for Firestore
@@ -215,7 +217,7 @@ export async function updateTaskProgress(taskId: string, progress: number): Prom
     if (!task) return;
 
     const docRef = doc(db, 'tasks', taskId);
-    const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+    const today = todayISO();
 
     let status: Task['status'] = 'not-started';
     if (progress === 100) status = 'completed';
@@ -312,7 +314,7 @@ export async function getWeeklyLogs(projectId: string): Promise<WeeklyLog[]> {
     })) as WeeklyLog[];
 }
 
-export async function createWeeklyLog(log: Omit<WeeklyLog, 'id'>): Promise<string> {
+export async function createWeeklyLog(log: Omit<WeeklyLog, 'id' | 'createdAt'>): Promise<string> {
     const logsRef = collection(db, 'weeklyLogs');
     const docRef = await addDoc(logsRef, {
         ...log,
@@ -330,28 +332,14 @@ export async function updateWeeklyLog(logId: string, data: Partial<WeeklyLog>): 
 
 export async function calculateProjectProgress(projectId: string): Promise<number> {
     const tasks = await getTasks(projectId);
-
     if (tasks.length === 0) return 0;
-
-    // Calculate total duration of all tasks for weighting
-    const totalDuration = tasks.reduce((sum, task) => {
-        const start = new Date(task.planStartDate);
-        const end = new Date(task.planEndDate);
-        const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-        return sum + Math.max(0, duration);
-    }, 0);
-
+    const totalDuration = tasks.reduce((sum, task) => sum + Math.max(0, calcDurationDays(task.planStartDate, task.planEndDate)), 0);
     if (totalDuration <= 0) return 0;
-
-    // Calculate weighted progress based on duration
     const weightedProgress = tasks.reduce((sum, task) => {
-        const start = new Date(task.planStartDate);
-        const end = new Date(task.planEndDate);
-        const duration = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-        const weight = (duration / totalDuration) * 100;
+        const duration = calcDurationDays(task.planStartDate, task.planEndDate);
+        const weight = (totalDuration > 0 ? duration / totalDuration : 0) * 100;
         return sum + (weight * (Number(task.progress) || 0) / 100);
     }, 0);
-
     return weightedProgress;
 }
 
@@ -512,6 +500,404 @@ export async function seedSampleData(): Promise<void> {
     console.log('Sample data seeded successfully');
 }
 
+export interface SeedFullDemoProjectResult {
+    created: boolean;
+    message: string;
+    projectId?: string;
+    taskCount: number;
+    expenseCount: number;
+    weeklyLogCount: number;
+}
+
+export async function seedFullDemoProject(): Promise<SeedFullDemoProjectResult> {
+    const demoProjectCode = 'DEMO-FULL-001';
+    const existingProjects = await getProjects();
+    const existingDemo = existingProjects.find(
+        (project) => (project.code || '').trim().toUpperCase() === demoProjectCode
+    );
+
+    if (existingDemo) {
+        return {
+            created: false,
+            message: `Demo project already exists (${demoProjectCode})`,
+            projectId: existingDemo.id,
+            taskCount: 0,
+            expenseCount: 0,
+            weeklyLogCount: 0
+        };
+    }
+
+    const projectId = await createProject({
+        name: 'Full Demo Project - Riverside Office',
+        code: demoProjectCode,
+        owner: 'SRT-HST Demo Team',
+        description: 'Full demo dataset for real workflow testing (tasks, cost codes, expenses, and weekly logs).',
+        startDate: '2025-01-06',
+        endDate: '2025-08-31',
+        overallProgress: 0,
+        status: 'in-progress',
+        categoryOrder: ['Preparation', 'Structure', 'Architecture', 'MEP']
+    });
+
+    const taskStatusFromProgress = (progress: number, forceDelayed?: boolean): Task['status'] => {
+        if (forceDelayed) return 'delayed';
+        if (progress >= 100) return 'completed';
+        if (progress > 0) return 'in-progress';
+        return 'not-started';
+    };
+
+    const durationDays = (start: string, end: string) =>
+        Math.max(1, differenceInDays(parseISO(end), parseISO(start)) + 1);
+
+    const demoTasks: Array<{
+        category: string;
+        subcategory: string;
+        subsubcategory?: string;
+        name: string;
+        responsible: string;
+        costCode: string;
+        cost: number;
+        quantity: string;
+        planStartDate: string;
+        planEndDate: string;
+        progress: number;
+        actualStartDate?: string;
+        actualEndDate?: string;
+        delayed?: boolean;
+    }> = [
+            {
+                category: 'Preparation',
+                subcategory: 'Planning',
+                name: 'Permit approval and survey handover',
+                responsible: 'Project Manager',
+                costCode: '18',
+                cost: 65000,
+                quantity: '1 lot',
+                planStartDate: '2025-01-06',
+                planEndDate: '2025-01-15',
+                progress: 100,
+                actualStartDate: '2025-01-06',
+                actualEndDate: '2025-01-14'
+            },
+            {
+                category: 'Preparation',
+                subcategory: 'Site Setup',
+                name: 'Temporary facilities and safety setup',
+                responsible: 'Site Engineer',
+                costCode: '18',
+                cost: 120000,
+                quantity: '1 lot',
+                planStartDate: '2025-01-10',
+                planEndDate: '2025-01-25',
+                progress: 100,
+                actualStartDate: '2025-01-10',
+                actualEndDate: '2025-01-24'
+            },
+            {
+                category: 'Structure',
+                subcategory: 'Foundation',
+                name: 'Earthwork and compaction',
+                responsible: 'Civil Engineer',
+                costCode: '16',
+                cost: 220000,
+                quantity: '1,800 m3',
+                planStartDate: '2025-01-20',
+                planEndDate: '2025-02-02',
+                progress: 100,
+                actualStartDate: '2025-01-20',
+                actualEndDate: '2025-02-01'
+            },
+            {
+                category: 'Structure',
+                subcategory: 'Foundation',
+                name: 'Footing rebar installation',
+                responsible: 'Civil Engineer',
+                costCode: '1',
+                cost: 280000,
+                quantity: '14 tons',
+                planStartDate: '2025-02-03',
+                planEndDate: '2025-02-18',
+                progress: 100,
+                actualStartDate: '2025-02-03',
+                actualEndDate: '2025-02-18'
+            },
+            {
+                category: 'Structure',
+                subcategory: 'Foundation',
+                name: 'Footing concrete casting',
+                responsible: 'Civil Engineer',
+                costCode: '3',
+                cost: 360000,
+                quantity: '240 m3',
+                planStartDate: '2025-02-12',
+                planEndDate: '2025-02-26',
+                progress: 100,
+                actualStartDate: '2025-02-12',
+                actualEndDate: '2025-02-27'
+            },
+            {
+                category: 'Structure',
+                subcategory: 'Frame',
+                subsubcategory: 'Level 1',
+                name: 'Column and beam rebar',
+                responsible: 'Structure Foreman',
+                costCode: '1',
+                cost: 320000,
+                quantity: '12 tons',
+                planStartDate: '2025-03-01',
+                planEndDate: '2025-03-20',
+                progress: 80,
+                actualStartDate: '2025-03-02'
+            },
+            {
+                category: 'Structure',
+                subcategory: 'Frame',
+                subsubcategory: 'Level 1',
+                name: 'Beam and slab formwork',
+                responsible: 'Structure Foreman',
+                costCode: '4',
+                cost: 250000,
+                quantity: '1,450 m2',
+                planStartDate: '2025-03-05',
+                planEndDate: '2025-03-24',
+                progress: 70,
+                actualStartDate: '2025-03-06'
+            },
+            {
+                category: 'Structure',
+                subcategory: 'Frame',
+                subsubcategory: 'Level 1',
+                name: 'Slab concrete casting',
+                responsible: 'Site Engineer',
+                costCode: '3',
+                cost: 300000,
+                quantity: '210 m3',
+                planStartDate: '2025-03-18',
+                planEndDate: '2025-04-04',
+                progress: 55,
+                actualStartDate: '2025-03-19'
+            },
+            {
+                category: 'MEP',
+                subcategory: 'Electrical',
+                subsubcategory: 'Level 1',
+                name: 'Electrical rough-in',
+                responsible: 'MEP Engineer',
+                costCode: '9',
+                cost: 240000,
+                quantity: '1 lot',
+                planStartDate: '2025-04-01',
+                planEndDate: '2025-04-25',
+                progress: 45,
+                actualStartDate: '2025-04-01',
+                delayed: true
+            },
+            {
+                category: 'MEP',
+                subcategory: 'Plumbing',
+                subsubcategory: 'Level 1',
+                name: 'Plumbing rough-in',
+                responsible: 'MEP Engineer',
+                costCode: '10',
+                cost: 190000,
+                quantity: '1 lot',
+                planStartDate: '2025-04-03',
+                planEndDate: '2025-04-28',
+                progress: 40,
+                actualStartDate: '2025-04-04'
+            },
+            {
+                category: 'Architecture',
+                subcategory: 'Wall and Ceiling',
+                subsubcategory: 'Level 1',
+                name: 'Wall framing and gypsum boards',
+                responsible: 'Architectural Foreman',
+                costCode: '6',
+                cost: 220000,
+                quantity: '980 m2',
+                planStartDate: '2025-04-20',
+                planEndDate: '2025-05-18',
+                progress: 30,
+                actualStartDate: '2025-04-24'
+            },
+            {
+                category: 'Architecture',
+                subcategory: 'Roof',
+                name: 'Roof steel frame',
+                responsible: 'Architectural Foreman',
+                costCode: '2',
+                cost: 260000,
+                quantity: '8 tons',
+                planStartDate: '2025-05-01',
+                planEndDate: '2025-05-22',
+                progress: 20,
+                actualStartDate: '2025-05-04'
+            },
+            {
+                category: 'Architecture',
+                subcategory: 'Roof',
+                name: 'Roofing sheet installation',
+                responsible: 'Architectural Foreman',
+                costCode: '5',
+                cost: 180000,
+                quantity: '920 m2',
+                planStartDate: '2025-05-18',
+                planEndDate: '2025-06-10',
+                progress: 0
+            },
+            {
+                category: 'Architecture',
+                subcategory: 'Finishes',
+                name: 'Flooring and tiles',
+                responsible: 'Architectural Foreman',
+                costCode: '7',
+                cost: 150000,
+                quantity: '1,100 m2',
+                planStartDate: '2025-06-01',
+                planEndDate: '2025-06-25',
+                progress: 0
+            },
+            {
+                category: 'Architecture',
+                subcategory: 'Finishes',
+                name: 'Painting and protective coating',
+                responsible: 'Architectural Foreman',
+                costCode: '12',
+                cost: 130000,
+                quantity: '3,400 m2',
+                planStartDate: '2025-06-15',
+                planEndDate: '2025-07-12',
+                progress: 0
+            },
+            {
+                category: 'Architecture',
+                subcategory: 'Finishes',
+                name: 'Sanitary fixtures and accessories',
+                responsible: 'MEP Engineer',
+                costCode: '13',
+                cost: 170000,
+                quantity: '22 sets',
+                planStartDate: '2025-07-01',
+                planEndDate: '2025-07-20',
+                progress: 0
+            },
+            {
+                category: 'MEP',
+                subcategory: 'HVAC',
+                name: 'VRV air conditioning system',
+                responsible: 'MEP Engineer',
+                costCode: '15',
+                cost: 300000,
+                quantity: '1 lot',
+                planStartDate: '2025-07-05',
+                planEndDate: '2025-08-05',
+                progress: 0
+            },
+            {
+                category: 'Architecture',
+                subcategory: 'Finishes',
+                name: 'Built-in furniture package',
+                responsible: 'Architectural Foreman',
+                costCode: '14',
+                cost: 280000,
+                quantity: '1 lot',
+                planStartDate: '2025-07-15',
+                planEndDate: '2025-08-20',
+                progress: 0
+            }
+        ];
+
+    for (let index = 0; index < demoTasks.length; index++) {
+        const task = demoTasks[index];
+        await createTask({
+            projectId,
+            category: task.category,
+            subcategory: task.subcategory,
+            subsubcategory: task.subsubcategory,
+            name: task.name,
+            responsible: task.responsible,
+            costCode: task.costCode,
+            cost: task.cost,
+            quantity: task.quantity,
+            planStartDate: task.planStartDate,
+            planEndDate: task.planEndDate,
+            planDuration: durationDays(task.planStartDate, task.planEndDate),
+            actualStartDate: task.actualStartDate,
+            actualEndDate: task.actualEndDate,
+            dueProcurementDate: task.planStartDate,
+            dueMaterialOnSiteDate: task.planStartDate,
+            dateOfUse: task.planStartDate,
+            procurementStatus: task.progress > 0 ? 'actual' : 'to-order',
+            progress: task.progress,
+            status: taskStatusFromProgress(task.progress, task.delayed),
+            order: index + 1
+        });
+    }
+
+    const demoExpenses: Omit<Expense, 'id' | 'createdAt'>[] = [
+        { projectId, date: '2025-01-08', amount: 32000, description: 'Permit and survey fees', costCode: '18', type: 'overhead' },
+        { projectId, date: '2025-01-15', amount: 55000, description: 'Temporary office and utilities', costCode: '18', type: 'overhead' },
+        { projectId, date: '2025-01-26', amount: 96000, description: 'Earthwork subcontract payment', costCode: '16', type: 'subcontract' },
+        { projectId, date: '2025-02-05', amount: 110000, description: 'Rebar delivery for foundation', costCode: '1', type: 'material' },
+        { projectId, date: '2025-02-14', amount: 148000, description: 'Concrete batch #1', costCode: '3', type: 'material' },
+        { projectId, date: '2025-02-24', amount: 88000, description: 'Concrete batch #2', costCode: '3', type: 'material' },
+        { projectId, date: '2025-03-04', amount: 124000, description: 'Rebar for frame level 1', costCode: '1', type: 'material' },
+        { projectId, date: '2025-03-11', amount: 64000, description: 'Formwork timber and accessories', costCode: '4', type: 'material' },
+        { projectId, date: '2025-03-22', amount: 132000, description: 'Concrete slab level 1', costCode: '3', type: 'material' },
+        { projectId, date: '2025-04-02', amount: 72000, description: 'Electrical conduits and wires', costCode: '9', type: 'material' },
+        { projectId, date: '2025-04-06', amount: 58000, description: 'Plumbing pipes and fittings', costCode: '10', type: 'material' },
+        { projectId, date: '2025-04-18', amount: 44000, description: 'MEP labor progress payment', costCode: '9', type: 'labor' },
+        { projectId, date: '2025-04-28', amount: 51000, description: 'Wall framing and gypsum boards', costCode: '6', type: 'material' },
+        { projectId, date: '2025-05-08', amount: 97000, description: 'Roof steel purchase', costCode: '2', type: 'material' },
+        { projectId, date: '2025-05-20', amount: 69000, description: 'Roofing sheet down payment', costCode: '5', type: 'material' },
+        { projectId, date: '2025-05-27', amount: 36000, description: 'General site overhead', costCode: '11', type: 'overhead' }
+    ];
+
+    for (const expense of demoExpenses) {
+        await createExpense(expense);
+    }
+
+    const demoWeeklyLogs = [
+        { weekNumber: 2, startDate: '2025-01-06', endDate: '2025-01-12', planned: 3, actual: 4, notes: 'Mobilization completed' },
+        { weekNumber: 3, startDate: '2025-01-13', endDate: '2025-01-19', planned: 6, actual: 7, notes: 'Site setup ahead of plan' },
+        { weekNumber: 4, startDate: '2025-01-20', endDate: '2025-01-26', planned: 10, actual: 11, notes: 'Earthwork started' },
+        { weekNumber: 5, startDate: '2025-01-27', endDate: '2025-02-02', planned: 14, actual: 15, notes: 'Earthwork completed' },
+        { weekNumber: 6, startDate: '2025-02-03', endDate: '2025-02-09', planned: 18, actual: 18, notes: 'Foundation rebar ongoing' },
+        { weekNumber: 7, startDate: '2025-02-10', endDate: '2025-02-16', planned: 23, actual: 22, notes: 'Concrete pour shifted by weather' },
+        { weekNumber: 8, startDate: '2025-02-17', endDate: '2025-02-23', planned: 28, actual: 27, notes: 'Foundation wraps up' },
+        { weekNumber: 9, startDate: '2025-02-24', endDate: '2025-03-02', planned: 33, actual: 31, notes: 'Frame work starts' },
+        { weekNumber: 10, startDate: '2025-03-03', endDate: '2025-03-09', planned: 38, actual: 35, notes: 'Rebar productivity lower than plan' },
+        { weekNumber: 11, startDate: '2025-03-10', endDate: '2025-03-16', planned: 43, actual: 39, notes: 'Material delivery delay on site' },
+        { weekNumber: 12, startDate: '2025-03-17', endDate: '2025-03-23', planned: 47, actual: 42, notes: 'Formwork catch-up in progress' },
+        { weekNumber: 13, startDate: '2025-03-24', endDate: '2025-03-30', planned: 51, actual: 45, notes: 'Concrete work stabilized' }
+    ];
+
+    for (const log of demoWeeklyLogs) {
+        await createWeeklyLog({
+            projectId,
+            weekNumber: log.weekNumber,
+            year: 2025,
+            startDate: log.startDate,
+            endDate: log.endDate,
+            plannedCumulativeProgress: log.planned,
+            actualCumulativeProgress: log.actual,
+            gap: log.actual - log.planned,
+            notes: log.notes
+        });
+    }
+
+    await syncProjectProgress(projectId);
+
+    return {
+        created: true,
+        message: 'Full demo project created successfully',
+        projectId,
+        taskCount: demoTasks.length,
+        expenseCount: demoExpenses.length,
+        weeklyLogCount: demoWeeklyLogs.length
+    };
+}
+
 // ==================== MEMBERS ====================
 
 export async function getMembers(): Promise<Member[]> {
@@ -628,4 +1014,119 @@ export async function seedMembers(): Promise<void> {
     }
 
     console.log('Default members seeded successfully');
+}
+
+// ==================== USER SETTINGS ====================
+
+export async function getUserSettings(userId: string): Promise<Record<string, unknown> | null> {
+    if (!userId) return null;
+
+    const settingsRef = doc(db, 'members', userId, 'settings', 'app');
+    const snapshot = await getDoc(settingsRef);
+    if (!snapshot.exists()) return null;
+
+    const payload = snapshot.data() as { settings?: Record<string, unknown> };
+    if (!payload?.settings || typeof payload.settings !== 'object') {
+        return null;
+    }
+
+    return payload.settings;
+}
+
+export async function saveUserSettings(userId: string, settings: Record<string, unknown>): Promise<void> {
+    if (!userId) return;
+
+    const settingsRef = doc(db, 'members', userId, 'settings', 'app');
+    await setDoc(settingsRef, {
+        userId,
+        settings: removeUndefined(settings),
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+    }, { merge: true });
+}
+
+// ==================== CSV TEMPLATE ====================
+
+export interface CsvTemplateDoc {
+    userId: string;
+    name: string;
+    data: Record<string, unknown>;
+    createdAt?: Timestamp;
+    updatedAt?: Timestamp;
+}
+
+const encodeTemplateDocId = (name: string) => encodeURIComponent(name);
+
+export async function getCsvTemplates(userId: string): Promise<Record<string, Record<string, unknown>>> {
+    const templatesRef = collection(db, 'members', userId, 'csvTemplates');
+    const snapshot = await getDocs(templatesRef);
+
+    const result: Record<string, Record<string, unknown>> = {};
+    snapshot.docs.forEach((docSnap) => {
+        const payload = docSnap.data() as CsvTemplateDoc;
+        if (payload?.name && payload?.data && typeof payload.data === 'object') {
+            result[payload.name] = payload.data;
+        }
+    });
+
+    return result;
+}
+
+export async function saveCsvTemplate(
+    userId: string,
+    name: string,
+    data: Record<string, unknown>
+): Promise<void> {
+    const cleanedName = name.trim();
+    if (!cleanedName) throw new Error('Template name is required');
+
+    const templateRef = doc(db, 'members', userId, 'csvTemplates', encodeTemplateDocId(cleanedName));
+    await setDoc(templateRef, {
+        userId,
+        name: cleanedName,
+        data: removeUndefined(data),
+        updatedAt: serverTimestamp(),
+        createdAt: serverTimestamp()
+    }, { merge: true });
+}
+
+export async function deleteCsvTemplate(userId: string, name: string): Promise<void> {
+    const cleanedName = name.trim();
+    if (!cleanedName) return;
+    const templateRef = doc(db, 'members', userId, 'csvTemplates', encodeTemplateDocId(cleanedName));
+    await deleteDoc(templateRef);
+}
+
+// ==================== EXPENSES ====================
+
+export async function getExpenses(projectId?: string): Promise<Expense[]> {
+    const expensesRef = collection(db, 'expenses');
+    let q;
+
+    if (projectId) {
+        q = query(expensesRef, where('projectId', '==', projectId), orderBy('date', 'desc'));
+    } else {
+        q = query(expensesRef, orderBy('date', 'desc'));
+    }
+
+    const snapshot = await getDocs(q);
+
+    return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+    })) as Expense[];
+}
+
+export async function createExpense(expense: Omit<Expense, 'id' | 'createdAt'>): Promise<string> {
+    const expensesRef = collection(db, 'expenses');
+    const docRef = await addDoc(expensesRef, {
+        ...removeUndefined(expense),
+        createdAt: serverTimestamp()
+    });
+    return docRef.id;
+}
+
+export async function deleteExpense(expenseId: string): Promise<void> {
+    const docRef = doc(db, 'expenses', expenseId);
+    await deleteDoc(docRef);
 }

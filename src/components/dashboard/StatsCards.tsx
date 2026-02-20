@@ -21,10 +21,10 @@ interface StatCardProps {
 
 function StatCard({ title, value, subtitle, icon, iconBg, trend }: StatCardProps) {
     return (
-        <div className="bg-white rounded-lg border border-gray-200 p-5 hover:shadow-md transition-shadow">
+        <div className=" rounded-md border border-gray-200 p-5 hover:shadow-md transition-shadow">
             <div className="flex items-start justify-between">
                 <div className="flex-1">
-                    <p className="text-gray-500 text-sm font-medium">{title}</p>
+                    <p className="text-gray-500 text-xs font-medium">{title}</p>
                     <p className="text-2xl font-semibold text-gray-900 mt-1">{value}</p>
                     {subtitle && (
                         <p className="text-gray-400 text-xs mt-1">{subtitle}</p>
@@ -36,7 +36,7 @@ function StatCard({ title, value, subtitle, icon, iconBg, trend }: StatCardProps
                         </div>
                     )}
                 </div>
-                <div className={`p-2.5 rounded-lg ${iconBg}`}>
+                <div className={`p-2.5 rounded-md ${iconBg}`}>
                     {icon}
                 </div>
             </div>

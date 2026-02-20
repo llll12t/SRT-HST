@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Employee, Task } from '@/types/construction';
-import { format, differenceInDays, addMonths, subMonths, isValid } from 'date-fns';
+import { format, differenceInDays, addMonths, subMonths, isValid, isBefore } from 'date-fns';
 import { ChevronRight, ChevronDown, Layers, FolderOpen } from 'lucide-react';
 
 // Types & Utils
@@ -52,13 +52,29 @@ export default function SCurveChart(props: SCurveChartProps) {
     useEffect(() => {
         if (!scrollContainerRef.current) return;
         const resizeObserver = new ResizeObserver(entries => {
-            for (let entry of entries) {
+            for (const entry of entries) {
                 if (entry.contentRect.width > 0) setContainerWidth(entry.contentRect.width);
             }
         });
         resizeObserver.observe(scrollContainerRef.current);
         return () => resizeObserver.disconnect();
     }, []);
+
+    // Scroll Sync for Right Axis
+    const axisScrollRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const mainContainer = scrollContainerRef.current;
+        const axisContainer = axisScrollRef.current;
+        if (!mainContainer || !axisContainer) return;
+
+        const handleScroll = () => {
+            axisContainer.style.transform = `translateY(-${mainContainer.scrollTop}px)`;
+        };
+
+        mainContainer.addEventListener('scroll', handleScroll);
+        return () => mainContainer.removeEventListener('scroll', handleScroll);
+    }, []);
+
 
     // 1. Timeline Logic (Reused from Gantt)
     const { timeRange, timeline, config } = useGanttTimeline({
@@ -98,6 +114,84 @@ export default function SCurveChart(props: SCurveChartProps) {
 
     // 3. S-Curve Data Calculation (Hook)
     const sCurveData = useSCurveData(tasks, timeRange, calcMode);
+    const [customDate, setCustomDate] = useState<Date | null>(() => {
+        if (typeof window === 'undefined') return null;
+        const saved = localStorage.getItem('scurve_custom_date');
+        return saved ? parseDate(saved) : null;
+    });
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (customDate) localStorage.setItem('scurve_custom_date', format(customDate, 'yyyy-MM-dd'));
+        else localStorage.removeItem('scurve_custom_date');
+    }, [customDate]);
+
+    const kpiStats = useMemo(() => {
+        const points = sCurveData.points || [];
+        const firstPointDate = points.length > 0 ? points[0].date : null;
+        const lastPointDate = points.length > 0 ? points[points.length - 1].date : null;
+        const latestActualPoint = [...points].reverse().find(p => p.actual > 0);
+
+        const hasValidActualMaxDate =
+            isValid(sCurveData.maxActualDate) && sCurveData.maxActualDate.getFullYear() > 2000;
+
+        // Default behavior for S-Curve:
+        // - If user sets custom date => use it
+        // - Else anchor on latest actual endpoint (matches graph reading better)
+        let referenceDate = customDate
+            ? customDate
+            : hasValidActualMaxDate
+                ? sCurveData.maxActualDate
+                : new Date();
+
+        // Clamp into timeline window
+        if (firstPointDate && isBefore(referenceDate, firstPointDate)) {
+            referenceDate = latestActualPoint?.date || firstPointDate;
+        }
+        if (lastPointDate && isBefore(lastPointDate, referenceDate)) {
+            referenceDate = lastPointDate;
+        }
+
+        const pointAtOrBefore = (date: Date) => {
+            if (points.length === 0) return null;
+            let hit = points[0];
+            for (let i = 1; i < points.length; i++) {
+                if (points[i].date <= date) hit = points[i];
+                else break;
+            }
+            return hit;
+        };
+
+        // Use same source as chart lines to keep KPI and graph perfectly aligned.
+        const refPoint = pointAtOrBefore(referenceDate) || latestActualPoint || points[points.length - 1] || null;
+        const progress = refPoint ? refPoint.actual : 0;
+        const planToDate = refPoint ? refPoint.plan : 0;
+        const gap = progress - planToDate;
+
+        const leafTasks = tasks.filter(t => !tasks.some(child => child.parentTaskId === t.id));
+        let overallPlanStart: Date | null = null;
+        let overallPlanEnd: Date | null = null;
+
+        leafTasks.forEach((t) => {
+            if (!t.planStartDate || !t.planEndDate) return;
+            const planStart = parseDate(t.planStartDate);
+            const planEnd = parseDate(t.planEndDate);
+            if (![planStart, planEnd].every(isValid)) return;
+
+            if (!overallPlanStart || isBefore(planStart, overallPlanStart)) overallPlanStart = planStart;
+            if (!overallPlanEnd || isBefore(overallPlanEnd, planEnd)) overallPlanEnd = planEnd;
+        });
+
+        const overallPlanSpanDays = overallPlanStart && overallPlanEnd
+            ? Math.max(1, differenceInDays(overallPlanEnd, overallPlanStart) + 1)
+            : null;
+        const variancePercent = gap;
+        const varianceDays = overallPlanSpanDays !== null
+            ? Math.round((variancePercent / 100) * overallPlanSpanDays)
+            : null;
+
+        return { progress, planToDate, gap, varianceDays, variancePercent };
+    }, [tasks, customDate, sCurveData.points, sCurveData.maxActualDate]);
 
     // UI States
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -116,10 +210,10 @@ export default function SCurveChart(props: SCurveChartProps) {
     };
 
     // Columns
-    const defaultVisibleColumns: VisibleColumns = { cost: true, weight: true, progress: true, quantity: true, period: true, team: true, planDuration: false, actualDuration: false };
+    const defaultVisibleColumns: VisibleColumns = { cost: true, weight: true, progress: true, quantity: false, period: false, team: false, planDuration: false, actualDuration: false };
     const [visibleColumns, setVisibleColumns] = useState<VisibleColumns>(() => {
         if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('scurve-visible-columns');
+            const saved = localStorage.getItem('scurve-visible-columns-v3');
             if (saved) {
                 try {
                     const parsed = JSON.parse(saved) as Partial<VisibleColumns>;
@@ -131,7 +225,7 @@ export default function SCurveChart(props: SCurveChartProps) {
     });
 
     useEffect(() => {
-        if (typeof window !== 'undefined') localStorage.setItem('scurve-visible-columns', JSON.stringify(visibleColumns));
+        if (typeof window !== 'undefined') localStorage.setItem('scurve-visible-columns-v3', JSON.stringify(visibleColumns));
     }, [visibleColumns]);
 
     useEffect(() => {
@@ -166,8 +260,8 @@ export default function SCurveChart(props: SCurveChartProps) {
     const stickyWidth = useMemo(() => {
         let w = 250;
         if (visibleColumns.cost) w += 80;
-        if (visibleColumns.weight) w += 56;
-        if (visibleColumns.quantity) w += 64;
+        if (visibleColumns.weight) w += 64;
+        if (visibleColumns.quantity) w += 80;
         if (visibleColumns.period) w += 150;
         if (visibleColumns.team) w += 92;
         if (visibleColumns.planDuration) w += 60;
@@ -324,9 +418,9 @@ export default function SCurveChart(props: SCurveChartProps) {
                             )}
                         </div>
                     )}
-                    {visibleColumns.weight && <div className="w-14 text-right text-xs text-gray-600 font-mono shrink-0">{getTaskWeight(task).toFixed(2)}%</div>}
+                    {visibleColumns.weight && <div className="w-16 text-right text-xs text-gray-600 font-mono shrink-0">{getTaskWeight(task).toFixed(2)}%</div>}
                     {visibleColumns.quantity && (
-                        <div className="w-16 text-right text-xs text-gray-600 font-mono shrink-0 bg-yellow-50/50 px-1 rounded mx-1">
+                        <div className="w-20 text-right text-xs text-gray-600 font-mono shrink-0 bg-yellow-50/50 px-1 rounded mx-1">
                             {onTaskUpdate ? (
                                 <input
                                     className="w-full text-right bg-transparent border-b border-transparent hover:border-blue-300 focus:border-blue-500 outline-none transition-colors"
@@ -354,6 +448,8 @@ export default function SCurveChart(props: SCurveChartProps) {
                             )}
                         </div>
                     )}
+                    {visibleColumns.planDuration && <div className="w-[60px] text-right text-xs text-gray-600 font-mono shrink-0 px-1">{differenceInDays(parseDate(task.planEndDate), parseDate(task.planStartDate)) + 1}d</div>}
+                    {visibleColumns.actualDuration && <div className="w-[60px] text-right text-xs text-green-600 font-mono shrink-0 px-1">{task.actualStartDate && task.actualEndDate ? differenceInDays(parseDate(task.actualEndDate), parseDate(task.actualStartDate)) + 1 : '-'}d</div>}
                     {visibleColumns.period && (
                         <div className="w-[150px] text-right text-[10px] font-mono shrink-0 px-2 flex flex-col justify-center leading-tight">
                             <div className="text-gray-600">
@@ -361,8 +457,6 @@ export default function SCurveChart(props: SCurveChartProps) {
                             </div>
                         </div>
                     )}
-                    {visibleColumns.planDuration && <div className="w-[60px] text-right text-xs text-gray-600 font-mono shrink-0 px-1">{differenceInDays(parseDate(task.planEndDate), parseDate(task.planStartDate)) + 1}d</div>}
-                    {visibleColumns.actualDuration && <div className="w-[60px] text-right text-xs text-green-600 font-mono shrink-0 px-1">{task.actualStartDate && task.actualEndDate ? differenceInDays(parseDate(task.actualEndDate), parseDate(task.actualStartDate)) + 1 : '-'}d</div>}
                     {visibleColumns.team && (
                         <div className="w-[92px] shrink-0 flex items-center pl-1">
                             {assignedEmployees.length > 0 ? (
@@ -401,11 +495,10 @@ export default function SCurveChart(props: SCurveChartProps) {
                     )}
                     {visibleColumns.progress && <div className="w-20 text-right text-xs text-gray-600 font-mono shrink-0 pr-4">{(task.progress || 0)}%</div>}
                 </div>
-                <div className="shrink-0" style={{ width: `${timelineWidth}px`, minWidth: `${timelineWidth}px` }}></div>
-            </div>
+                <div className="shrink-0 pointer-events-none" style={{ width: `${timelineWidth}px`, minWidth: `${timelineWidth}px` }}></div>
+            </div >
         );
     };
-
     return (
         <div className={`relative flex flex-col bg-white border border-gray-300 w-full max-w-full overflow-hidden font-sans ${isExpanded
             ? 'fixed inset-0 z-[1200] h-screen w-screen rounded-none border-0 shadow-none'
@@ -426,17 +519,20 @@ export default function SCurveChart(props: SCurveChartProps) {
                     useCostWeighting: calcMode === 'financial',
                     totalWeight: calcMode === 'financial' ? projectStats.totalCost : projectStats.totalDuration
                 }}
-                progressStats={{ totalActual: 0, totalPlan: 0 }}
+                kpiStats={kpiStats}
                 visibleColumns={visibleColumns}
                 onToggleColumn={(col) => setVisibleColumns((prev: any) => ({ ...prev, [col]: !prev[col] }))}
                 showDependencies={false}
                 onToggleDependencies={() => { }}
                 onExport={() => { }}
-                customDate={null}
-                onCustomDateChange={() => { }}
+                customDate={customDate}
+                onCustomDateChange={setCustomDate}
                 onBudgetChange={setManualBudget}
                 isExpanded={isExpanded}
                 onToggleExpand={() => setIsExpanded(prev => !prev)}
+                headerStatsDefaultVisible={false}
+                headerStatsStorageKey="scurve_show_header_stats_v2"
+                hideDependencyControl={true}
             />
 
             {/* Calculation Mode Toggle */}
@@ -468,6 +564,7 @@ export default function SCurveChart(props: SCurveChartProps) {
                             config={config}
                             stickyWidth={stickyWidth}
                             showDates={showDates}
+                            referenceDate={customDate}
                             visibleColumns={visibleColumns}
                         />
 
@@ -511,7 +608,7 @@ export default function SCurveChart(props: SCurveChartProps) {
                                                     </div>
                                                 </div>
                                                 <div
-                                                    className="shrink-0 bg-transparent"
+                                                    className="shrink-0 bg-transparent pointer-events-none"
                                                     style={{ width: `${timelineWidth}px`, minWidth: `${timelineWidth}px` }}
                                                 ></div>
                                             </div>
@@ -555,7 +652,7 @@ export default function SCurveChart(props: SCurveChartProps) {
                                                                         </button>
                                                                     </div>
                                                                     <div
-                                                                        className="shrink-0 bg-transparent"
+                                                                        className="shrink-0 bg-transparent pointer-events-none"
                                                                         style={{ width: `${timelineWidth}px`, minWidth: `${timelineWidth}px` }}
                                                                     ></div>
                                                                 </div>
@@ -596,7 +693,7 @@ export default function SCurveChart(props: SCurveChartProps) {
                                                                                             </button>
                                                                                         </div>
                                                                                         <div
-                                                                                            className="shrink-0 bg-transparent"
+                                                                                            className="shrink-0 bg-transparent pointer-events-none"
                                                                                             style={{ width: `${timelineWidth}px`, minWidth: `${timelineWidth}px` }}
                                                                                         ></div>
                                                                                     </div>
@@ -636,23 +733,44 @@ export default function SCurveChart(props: SCurveChartProps) {
                                     totalScope={sCurveData.totalScope}
                                     mode={calcMode}
                                     left={stickyWidth}
+                                    referenceDate={customDate}
                                 />
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Fixed Right Axis Overlay */}
-                <div className="absolute w-[50px] pointer-events-none z-20 border-l border-gray-100 bg-white/20"
-                    style={{ top: `${axisTopOffset}px`, left: `${stickyWidth + timelineWidth - 50}px`, height: `${graphHeight}px` }}>
-                    {/* Axis Labels */}
-                    <div className="relative w-full h-full">
+                {/* Fixed Right Axis Overlay (Synced Scroll) */}
+                <div className="absolute right-0 z-[90] w-[50px] pointer-events-none border-l border-gray-100/50 bg-white/30 backdrop-blur-[1px] overflow-hidden"
+                    style={{ top: `${axisTopOffset}px`, bottom: 0 }}>
+                    <div ref={axisScrollRef} className="relative w-full" style={{ height: `${graphHeight}px` }}>
                         {[0, 25, 50, 75, 100].map(val => (
-                            <div key={val} className="absolute right-1 text-[10px] text-gray-500 font-medium"
+                            <div key={val} className="absolute right-2 text-[10px] text-gray-500 font-medium bg-white/30 px-0.5 rounded"
                                 style={{ bottom: `${val}%`, transform: 'translateY(50%)' }}>
                                 {val}
                             </div>
                         ))}
+                    </div>
+                </div>
+            </div>
+
+            {/* Footer Summary Bar */}
+            <div className="flex-shrink-0 bg-gray-100 border-t border-gray-300 z-[80] shadow-[0_-2px_10px_rgba(0,0,0,0.05)] font-mono text-xs">
+                <div className="flex h-10 items-center">
+                    <div
+                        className="sticky left-0 bg-gray-100 border-r border-gray-300 flex items-center px-4 font-bold text-gray-800 z-20"
+                        style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}
+                    >
+                        <div className="flex-1">TOTAL</div>
+                        <div className="w-28 text-right shrink-0 pr-2 flex items-center justify-end gap-2">
+                            <span className="text-gray-500 text-[10px]">ACTUAL:</span>
+                            <span className={`${kpiStats.progress >= 100 ? 'text-green-600' : 'text-blue-600'} text-sm`}>
+                                {kpiStats.progress.toFixed(2)}%
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex-1 bg-gray-50 text-gray-400 flex items-center justify-center italic text-[10px]">
+                        Overall Project Status
                     </div>
                 </div>
             </div>

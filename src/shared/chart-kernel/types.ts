@@ -34,6 +34,11 @@ export interface VisibleColumns {
   period: boolean;
   team: boolean;
   progress: boolean;
+  dueProcurement?: boolean;
+  dueMaterialOnSite?: boolean;
+  dateOfUse?: boolean;
+  duration?: boolean;
+  procurementStatus?: boolean;
   planDuration?: boolean;
   actualDuration?: boolean;
 }

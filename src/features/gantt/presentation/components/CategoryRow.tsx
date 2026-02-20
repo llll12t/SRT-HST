@@ -3,7 +3,7 @@ import { ChevronRight, ChevronDown, Plus, GripVertical } from 'lucide-react';
 import { format } from 'date-fns';
 import { Task } from '@/types/construction';
 import { VisibleColumns, GanttConfig, ViewMode, DateRange, ColorMenuConfig } from './types';
-import { getCategorySummary, getCategoryBarStyle, isWeekend, formatDateRange } from './utils';
+import { getCategorySummary, getCategoryBarStyle, formatDateRange } from './utils';
 
 interface CategoryRowProps {
     category: string;
@@ -18,6 +18,8 @@ interface CategoryRowProps {
     timeline: { items: Date[] }; // Check strict type
     config: GanttConfig;
     viewMode: ViewMode;
+    isFourWeekView?: boolean;
+    isProcurementMode?: boolean;
     timeRange: DateRange;
     getTaskWeight: (task: Task) => number;
     // Drag handlers for category reordering
@@ -42,6 +44,8 @@ export const CategoryRow: React.FC<CategoryRowProps> = ({
     timeline,
     config,
     viewMode,
+    isFourWeekView = false,
+    isProcurementMode = false,
     timeRange,
     getTaskWeight,
     onCategoryDragStart,
@@ -70,8 +74,7 @@ export const CategoryRow: React.FC<CategoryRowProps> = ({
         <div key={category}>
             {/* Category Header */}
             <div
-                className={`flex bg-white border-b border-dashed border-gray-200 cursor-pointer hover:bg-gray-50 transition-colors h-8 group relative ${isDragging ? 'opacity-40 bg-blue-50' : ''}`}
-                onClick={() => toggleCategory(category)}
+                className={`flex bg-white border-b border-dashed border-gray-300/60 hover:bg-gray-50 transition-colors h-8 group relative ${isDragging ? 'opacity-40 bg-blue-50' : ''}`}
                 onDragOver={(e) => onCategoryDragOver?.(e)}
                 onDrop={(e) => onCategoryDrop?.(e, category)}
             >
@@ -95,7 +98,15 @@ export const CategoryRow: React.FC<CategoryRowProps> = ({
 
                     {/* Collapse Button */}
                     <div className="w-4 flex justify-center mr-1">
-                        <button className="p-0.5 hover:bg-gray-200 rounded-sm transition-colors text-gray-500">
+                        <button
+                            type="button"
+                            className="p-0.5 hover:bg-gray-200 rounded-sm transition-colors text-gray-500"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                toggleCategory(category);
+                            }}
+                            title={isCollapsed ? 'Expand category' : 'Collapse category'}
+                        >
                             {isCollapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                         </button>
                     </div>
@@ -142,20 +153,25 @@ export const CategoryRow: React.FC<CategoryRowProps> = ({
 
                     {/* Columns */}
                     {visibleColumns.cost && (
-                        <div className="w-20 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-900 font-bold font-mono shrink-0 pr-2 truncate">
+                        <div className="w-20 h-full flex items-center justify-end border-l border-gray-300/70 text-xs text-gray-900 font-bold font-mono shrink-0 pr-2 truncate">
                             {categorySummary.totalCost.toLocaleString()}
                         </div>
                     )}
                     {visibleColumns.weight && (
-                        <div className="w-16 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-900 font-bold font-mono shrink-0 pr-2 truncate">
+                        <div className="w-16 h-full flex items-center justify-end border-l border-gray-300/70 text-xs text-gray-900 font-bold font-mono shrink-0 pr-2 truncate">
                             {categorySummary.totalWeight.toFixed(2)}%
                         </div>
                     )}
                     {visibleColumns.quantity && (
-                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-200 shrink-0 pl-2 truncate"></div>
+                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-300/70 shrink-0 pl-2 truncate"></div>
                     )}
+                    {isProcurementMode && visibleColumns.dueProcurement && <div className="w-[78px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-500 pl-2 shrink-0">-</div>}
+                    {isProcurementMode && visibleColumns.dueMaterialOnSite && <div className="w-[78px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-500 pl-2 shrink-0">-</div>}
+                    {isProcurementMode && visibleColumns.dateOfUse && <div className="w-[78px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-500 pl-2 shrink-0">-</div>}
+                    {isProcurementMode && visibleColumns.duration && <div className="w-[62px] h-full flex items-center justify-end border-l border-gray-300/70 text-[10px] text-gray-500 pr-2 shrink-0">-</div>}
+                    {isProcurementMode && visibleColumns.procurementStatus && <div className="w-[96px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-500 pl-2 shrink-0">-</div>}
                     {visibleColumns.period && (
-                        <div className="w-[180px] h-full flex items-center justify-start border-l border-gray-200 text-[10px] text-gray-600 font-mono shrink-0 pl-2 truncate">
+                        <div className="w-[150px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-600 font-mono shrink-0 pl-2 truncate">
                             {categorySummary.dateRange ? (
                                 formatDateRange(categorySummary.dateRange.start, categorySummary.dateRange.end)
                             ) : '-'}
@@ -163,12 +179,12 @@ export const CategoryRow: React.FC<CategoryRowProps> = ({
                     )}
                     {visibleColumns.team && (
                         <div
-                            className="h-full flex items-center justify-center border-l border-gray-200 shrink-0"
+                            className="h-full flex items-center justify-center border-l border-gray-300/70 shrink-0"
                             style={{ width: `${employeeColumnWidth}px`, minWidth: `${employeeColumnWidth}px` }}
                         />
                     )}
                     {visibleColumns.progress && (
-                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-200 shrink-0 gap-1 pl-2 truncate">
+                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-300/70 shrink-0 gap-1 pl-2 truncate">
                             <span className="w-[45px] text-left text-xs text-blue-700 font-bold font-mono truncate">
                                 {categorySummary.avgProgress.toFixed(0)}%
                             </span>
@@ -178,12 +194,18 @@ export const CategoryRow: React.FC<CategoryRowProps> = ({
                 </div>
 
                 {/* Category Summary Bar on Chart */}
-                <div className="flex-1 bg-white relative" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
+                <div className="flex-1 bg-white relative border-l border-gray-300/90" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
                     {/* Grid lines background */}
                     <div className="absolute inset-0 flex pointer-events-none">
                         {timeline.items.map((item, idx) => (
-                            <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50/50' : ''
-                                }`}
+                            <div key={idx} className={`flex-shrink-0 box-border h-full
+                                ${isFourWeekView && viewMode === 'day'
+                                    ? `${Math.floor(idx / 7) % 4 === 0 ? 'bg-sky-50' : Math.floor(idx / 7) % 4 === 1 ? 'bg-rose-50' : Math.floor(idx / 7) % 4 === 2 ? 'bg-emerald-50' : 'bg-violet-50'} border-r border-slate-300/35`
+                                    : viewMode === 'week'
+                                        ? `border-r border-slate-300 ${idx % 2 === 0 ? 'bg-slate-50/60' : 'bg-white'}`
+                                        : 'border-r border-dashed border-gray-300/60'}
+                                ${viewMode === 'day' && !isFourWeekView ? (item.getDay() === 6 ? 'bg-violet-50/45' : item.getDay() === 0 ? 'bg-red-50/45' : '') : ''}
+                                `}
                                 style={{ width: config.cellWidth }} />
                         ))}
                     </div>

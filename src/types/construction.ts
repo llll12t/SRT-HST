@@ -14,6 +14,8 @@ export interface Project {
     updatedAt: string;
     categoryOrder?: string[];
     subcategoryOrder?: Record<string, string[]>; // { "categoryName": ["sub1", "sub2", ...] }
+    color?: string;
+    googleSheetUrl?: string;
 }
 
 export interface Task {
@@ -28,7 +30,7 @@ export interface Task {
     responsible?: string;
     assignedEmployeeIds?: string[];
     color?: string; // Custom color for the task/group bar
-    // weight removed
+    costCode?: string; // e.g. "1", "2", "101"
     cost?: number; // Cost in Baht
     quantity?: string; // Q'ty with unit (e.g. "20 m.")
     planStartDate: string;
@@ -44,6 +46,10 @@ export interface Task {
     order: number;
     predecessors?: string[];
     remarks?: string;
+    dueProcurementDate?: string;
+    dueMaterialOnSiteDate?: string;
+    dateOfUse?: string;
+    procurementStatus?: 'to-order' | 'ordered' | 'delivered' | 'ready' | 'in-stock' | 'plan-a' | 'plan-b' | 'plan-c' | 'actual';
     createdAt: string;
     updatedAt: string;
 }
@@ -142,4 +148,15 @@ export interface Employee {
     active?: boolean;
     createdAt?: string;
     updatedAt?: string;
+}
+
+export interface Expense {
+    id: string;
+    projectId: string;
+    amount: number;
+    description: string;
+    date: string; // ISO date string YYYY-MM-DD
+    costCode?: string;
+    type?: 'material' | 'labor' | 'subcontract' | 'overhead' | 'other';
+    createdAt?: string;
 }

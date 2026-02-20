@@ -4,7 +4,6 @@ import React from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import Sidebar from '@/components/layout/Sidebar';
-import Header from '@/components/layout/Header';
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { SidebarProvider, useSidebar } from '@/contexts/SidebarContext';
 import { Loader2 } from 'lucide-react';
@@ -18,11 +17,10 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         <div className="flex min-h-screen">
             <Sidebar />
             <div data-layout-content className={clsx(
-                'flex-1 transition-all duration-200',
+                'flex-1 min-w-0 transition-all duration-200',
                 collapsed ? 'lg:ml-16' : 'lg:ml-56'
             )}>
-                <Header />
-                <main data-layout-main className="p-6">
+                <main data-layout-main className="p-6 min-w-0 max-w-full overflow-x-hidden">
                     {children}
                 </main>
             </div>

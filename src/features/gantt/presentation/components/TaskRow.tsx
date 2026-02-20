@@ -1,10 +1,10 @@
 import React from 'react';
-import { ChevronRight, ChevronDown, Plus, AlertTriangle, X } from 'lucide-react';
+import { ChevronRight, ChevronDown, Plus, AlertTriangle, X, Calendar } from 'lucide-react';
 import { Task, Employee } from '@/types/construction';
 import { createPortal } from 'react-dom';
 import { ViewMode, GanttConfig, DragState, RowDragState, VisibleColumns, DateRange } from './types';
 import { format, parseISO, differenceInDays, addDays } from 'date-fns';
-import { getBarStyle, getActualDates, isWeekend, isToday, formatDateTH, getGroupSummary, formatDateRange, parseDate } from './utils';
+import { getBarStyle, getActualDates, isToday, formatDateTH, getGroupSummary, formatDateRange, parseDate } from './utils';
 
 interface TaskRowProps {
     task: Task;
@@ -14,6 +14,13 @@ interface TaskRowProps {
     // Config & Context
     config: GanttConfig;
     viewMode: ViewMode;
+    isFourWeekView?: boolean;
+    isProcurementMode?: boolean;
+    procurementOffsets?: {
+        dueProcurementDays: number;
+        dueMaterialOnSiteDays: number;
+        dateOfUseOffsetDays: number;
+    };
     timeRange: DateRange;
     visibleColumns: VisibleColumns;
     stickyWidth: number;
@@ -56,6 +63,9 @@ export const TaskRow: React.FC<TaskRowProps> = ({
     tasks,
     config,
     viewMode,
+    isFourWeekView = false,
+    isProcurementMode = false,
+    procurementOffsets = { dueProcurementDays: -14, dueMaterialOnSiteDays: -7, dateOfUseOffsetDays: 0 },
     timeRange,
     visibleColumns,
     stickyWidth,
@@ -96,6 +106,7 @@ export const TaskRow: React.FC<TaskRowProps> = ({
 
     // Check loading state
     const isLoading = loadingIds?.has(t.id);
+    const [isDragEnabled, setIsDragEnabled] = React.useState(false);
     const [showEmployeePicker, setShowEmployeePicker] = React.useState(false);
     const employeePickerRef = React.useRef<HTMLDivElement | null>(null);
     const employeePickerButtonRef = React.useRef<HTMLButtonElement | null>(null);
@@ -150,20 +161,129 @@ export const TaskRow: React.FC<TaskRowProps> = ({
     const displayEndDate = isGroup && groupSummary ? groupSummary.maxEndDate : t.planEndDate;
     const displayProgress = isGroup && groupSummary ? groupSummary.progress : t.progress;
     const displayCost = isGroup && groupSummary ? groupSummary.totalCost : t.cost;
-    const durationVariance = React.useMemo(() => {
+    const endDateVariance = React.useMemo(() => {
         if (isGroup) return null;
-        if (!t.planStartDate || !t.planEndDate || !t.actualStartDate || !t.actualEndDate) return null;
+        if (!t.planEndDate || !t.actualEndDate) return null;
+        if (Number(t.progress) !== 100) return null;
 
-        const planStart = parseDate(t.planStartDate);
         const planEnd = parseDate(t.planEndDate);
-        const actualStart = parseDate(t.actualStartDate);
         const actualEnd = parseDate(t.actualEndDate);
-        if ([planStart, planEnd, actualStart, actualEnd].some(d => isNaN(d.getTime()))) return null;
+        if ([planEnd, actualEnd].some(d => isNaN(d.getTime()))) return null;
 
-        const plannedDays = differenceInDays(planEnd, planStart) + 1;
-        const actualDays = differenceInDays(actualEnd, actualStart) + 1;
-        return actualDays - plannedDays;
-    }, [isGroup, t.planStartDate, t.planEndDate, t.actualStartDate, t.actualEndDate]);
+        // Baseline = planned end date. Negative means finished later than plan.
+        return differenceInDays(planEnd, actualEnd);
+    }, [isGroup, t.planEndDate, t.actualEndDate, t.progress]);
+
+    const getTaskDurationValue = (task: Task) => {
+        if (task.planDuration && task.planDuration > 0) return task.planDuration;
+        if (task.planStartDate && task.planEndDate) {
+            return Math.max(1, differenceInDays(parseISO(task.planEndDate), parseISO(task.planStartDate)) + 1);
+        }
+        return 1;
+    };
+
+    const normalizeProcStatus = (value?: Task['procurementStatus']) => {
+        if (!value) return 'to-order' as const;
+        if (value === 'plan-a' || value === 'plan-b' || value === 'plan-c') return 'ordered' as const;
+        if (value === 'actual') return 'ready' as const;
+        if (value === 'to-order' || value === 'ordered' || value === 'delivered' || value === 'ready' || value === 'in-stock') return value;
+        return 'to-order' as const;
+    };
+
+    const getProcStatusLabelTH = (statusKey: 'to-order' | 'ordered' | 'delivered' | 'ready' | 'in-stock') => {
+        if (statusKey === 'to-order') return 'To Order';
+        if (statusKey === 'ordered') return 'Ordered';
+        if (statusKey === 'delivered') return 'Delivered';
+        if (statusKey === 'in-stock') return 'In Stock';
+        return 'Ready';
+    };
+
+    const procurementDates = React.useMemo(() => {
+        // Prepare base values
+        let dueProcrurementVal = '-';
+        let dueMaterialOnSiteVal = '-';
+        let dateOfUseVal = '-';
+        let durationDaysVal = '-';
+
+        // 1. If manual dates exist in task, use them
+        if (t.dueProcurementDate) dueProcrurementVal = formatDateTH(t.dueProcurementDate);
+        if (t.dueMaterialOnSiteDate) dueMaterialOnSiteVal = formatDateTH(t.dueMaterialOnSiteDate);
+        if (t.dateOfUse) dateOfUseVal = formatDateTH(t.dateOfUse);
+
+        // 2. If no manual dates, fallback to auto-calc IF planStartDate exists
+        if (t.planStartDate) {
+            try {
+                const start = parseISO(t.planStartDate);
+                if (!t.dueProcurementDate) {
+                    dueProcrurementVal = formatDateTH(format(addDays(start, procurementOffsets.dueProcurementDays), 'yyyy-MM-dd')) + '*'; // Add * to indicate auto
+                }
+                if (!t.dueMaterialOnSiteDate) {
+                    dueMaterialOnSiteVal = formatDateTH(format(addDays(start, procurementOffsets.dueMaterialOnSiteDays), 'yyyy-MM-dd')) + '*';
+                }
+                if (!t.dateOfUse) {
+                    dateOfUseVal = formatDateTH(format(addDays(start, procurementOffsets.dateOfUseOffsetDays), 'yyyy-MM-dd')) + '*';
+                }
+                durationDaysVal = String(getTaskDurationValue(t));
+            } catch {
+                // Keep defaults
+            }
+        }
+
+        const statusKey = t.procurementStatus
+            ? normalizeProcStatus(t.procurementStatus)
+            : (t.status === 'completed'
+                ? 'ready'
+                : t.status === 'in-progress'
+                    ? 'ordered'
+                    : 'to-order');
+        const statusLabel = getProcStatusLabelTH(statusKey);
+
+        return {
+            dueProcurement: dueProcrurementVal,
+            dueMaterialOnSite: dueMaterialOnSiteVal,
+            dateOfUse: dateOfUseVal,
+            durationDays: durationDaysVal,
+            statusKey,
+            statusLabel
+        };
+    }, [t, procurementOffsets]);
+
+    const procurementMarkerDates = React.useMemo(() => {
+        if (!isProcurementMode || !t.planStartDate || isGroup) return null;
+        try {
+            const start = parseISO(t.planStartDate);
+
+            // Calculate defaults
+            let dueProcurement = addDays(start, procurementOffsets.dueProcurementDays);
+            let dueMaterialOnSite = addDays(start, procurementOffsets.dueMaterialOnSiteDays);
+            let dateOfUse = addDays(start, procurementOffsets.dateOfUseOffsetDays);
+
+            // Override with manual dates if set
+            if (t.dueProcurementDate) dueProcurement = parseISO(t.dueProcurementDate);
+            if (t.dueMaterialOnSiteDate) dueMaterialOnSite = parseISO(t.dueMaterialOnSiteDate);
+            if (t.dateOfUse) dateOfUse = parseISO(t.dateOfUse);
+
+            return { dueProcurement, dueMaterialOnSite, dateOfUse };
+        } catch {
+            return null;
+        }
+    }, [isProcurementMode, isGroup, t.planStartDate, procurementOffsets, t.dueProcurementDate, t.dueMaterialOnSiteDate, t.dateOfUse]);
+
+
+    const getDateLeftPx = React.useCallback((date: Date) => {
+        const dayOffset = differenceInDays(date, timeRange.start);
+        if (viewMode === 'day') return dayOffset * config.cellWidth + config.cellWidth / 2;
+        if (viewMode === 'week') return (dayOffset / 7) * config.cellWidth + config.cellWidth / 2;
+        return (dayOffset / 30.44) * config.cellWidth + config.cellWidth / 2;
+    }, [timeRange.start, viewMode, config.cellWidth]);
+
+    const getProcStatusClass = (statusKey: 'to-order' | 'ordered' | 'delivered' | 'ready' | 'in-stock') => {
+        if (statusKey === 'in-stock') return 'text-slate-700 bg-slate-100';
+        if (statusKey === 'ready') return 'text-emerald-700 bg-emerald-50';
+        if (statusKey === 'delivered') return 'text-indigo-700 bg-indigo-50';
+        if (statusKey === 'ordered') return 'text-cyan-700 bg-cyan-50';
+        return 'text-amber-700 bg-amber-50';
+    };
 
     const handleToggleEmployee = async (employeeId: string) => {
         if (!onTaskUpdate) return;
@@ -187,16 +307,19 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                 <div className="h-0.5 bg-blue-500 w-full" />
             )}
             <div
-                className={`flex h-8 border-b border-dashed border-gray-200 transition-colors group relative
+                className={`flex h-8 border-b border-dashed border-gray-300/60 transition-colors group relative
                 ${tIsDragging ? 'opacity-50 bg-gray-100' : 'hover:bg-blue-50/30'}
                 ${tIsDropTarget && dropPosition === 'child' ? 'bg-blue-100 ring-2 ring-inset ring-blue-400' : ''}
             `}
-                draggable={!!onTaskUpdate}
+                draggable={!!onTaskUpdate && isDragEnabled}
                 onDragStart={(e) => handleRowDragStart(e, t)}
                 onDragOver={(e) => handleRowDragOver(e, t.id)}
                 onDragLeave={handleRowDragLeave}
                 onDrop={(e) => handleRowDrop(e, t.id)}
-                onDragEnd={handleRowDragEnd}
+                onDragEnd={(e) => {
+                    setIsDragEnabled(false);
+                    handleRowDragEnd();
+                }}
             >
                 <div className="sticky left-0 z-[60] bg-white group-hover:bg-gray-50 border-r border-gray-300 flex items-center pl-4 shadow-[1px_0_0px_rgba(0,0,0,0.05)]"
                     style={{ width: `${stickyWidth}px`, minWidth: `${stickyWidth}px` }}>
@@ -249,11 +372,26 @@ export const TaskRow: React.FC<TaskRowProps> = ({
 
                     {/* Drag handle */}
                     {onTaskUpdate && (
-                        <div className="cursor-grab mr-1 text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                            type="button"
+                            className="cursor-grab mr-1 text-gray-400 hover:text-gray-600 transition-opacity"
+                            title="Move"
+                            onMouseDown={(e) => {
+                                e.stopPropagation();
+                                setIsDragEnabled(true);
+                            }}
+                            onMouseUp={() => setIsDragEnabled(false)}
+                            onTouchStart={(e) => {
+                                e.stopPropagation();
+                                setIsDragEnabled(true);
+                            }}
+                            onTouchEnd={() => setIsDragEnabled(false)}
+                            onClick={(e) => e.stopPropagation()}
+                        >
                             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                                 <circle cx="5" cy="5" r="2" /><circle cx="12" cy="5" r="2" /><circle cx="5" cy="12" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="5" cy="19" r="2" /><circle cx="12" cy="19" r="2" />
                             </svg>
-                        </div>
+                        </button>
                     )}
 
                     <div className={`flex-1 truncate text-xs transition-colors flex items-center pr-2 
@@ -291,12 +429,12 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                     </div>
 
                     {visibleColumns.cost && (
-                        <div className="w-20 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
+                        <div className="w-20 h-full flex items-center justify-end border-l border-gray-300/70 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
                             {isGroup ? (displayCost ? displayCost.toLocaleString() : '-') : (t.cost ? t.cost.toLocaleString() : '-')}
                         </div>
                     )}
                     {visibleColumns.weight && (
-                        <div className="w-16 h-full flex items-center justify-end border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
+                        <div className="w-16 h-full flex items-center justify-end border-l border-gray-300/70 text-xs text-gray-600 font-medium font-mono shrink-0 pr-2 truncate">
                             {(() => {
                                 if (t.type === 'group') {
                                     // Recursive sum for groups
@@ -312,18 +450,131 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                         </div>
                     )}
                     {visibleColumns.quantity && (
-                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-200 text-xs text-gray-600 font-medium font-mono shrink-0 pl-2 truncate">
-                            {isGroup ? (groupSummary?.count ? `${groupSummary.count} งาน` : '-') : (t.quantity || '-')}
+                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-300/70 text-xs text-gray-600 font-medium font-mono shrink-0 pl-2 truncate">
+                            {isGroup ? (groupSummary?.count ? `${groupSummary.count} items` : '-') : (t.quantity || '-')}
+                        </div>
+                    )}
+                    {isProcurementMode && visibleColumns.dueProcurement && (
+                        <div className="w-[78px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-600 font-mono shrink-0 pl-2 relative group/date">
+                            {isGroup ? '-' : (
+                                <>
+                                    <div className="flex items-center w-full pr-1">
+                                        <span
+                                            className={`truncate ${!t.dueProcurementDate ? 'text-gray-400' : 'text-gray-700'}`}
+                                            title={t.dueProcurementDate ? `Manual: ${t.dueProcurementDate}` : "Auto-calculated"}
+                                        >
+                                            {procurementDates.dueProcurement.replace('*', '')}
+                                            {!t.dueProcurementDate && '*'}
+                                        </span>
+                                        <Calendar className="w-3 h-3 text-gray-400 ml-auto flex-shrink-0" />
+                                    </div>
+                                    {onTaskUpdate && (
+                                        <input
+                                            type="date"
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                            value={t.dueProcurementDate || ''}
+                                            onChange={(e) => onTaskUpdate(t.id, { dueProcurementDate: e.target.value })}
+                                            title="Click to set date"
+                                        />
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                    {isProcurementMode && visibleColumns.dueMaterialOnSite && (
+                        <div className="w-[78px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-600 font-mono shrink-0 pl-2 relative group/date">
+                            {isGroup ? '-' : (
+                                <>
+                                    <div className="flex items-center w-full pr-1">
+                                        <span
+                                            className={`truncate ${!t.dueMaterialOnSiteDate ? 'text-gray-400' : 'text-gray-700'}`}
+                                            title={t.dueMaterialOnSiteDate ? `Manual: ${t.dueMaterialOnSiteDate}` : "Auto-calculated"}
+                                        >
+                                            {procurementDates.dueMaterialOnSite.replace('*', '')}
+                                            {!t.dueMaterialOnSiteDate && '*'}
+                                        </span>
+                                        <Calendar className="w-3 h-3 text-gray-400 ml-auto flex-shrink-0" />
+                                    </div>
+                                    {onTaskUpdate && (
+                                        <input
+                                            type="date"
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                            value={t.dueMaterialOnSiteDate || ''}
+                                            onChange={(e) => onTaskUpdate(t.id, { dueMaterialOnSiteDate: e.target.value })}
+                                            title="Click to set date"
+                                        />
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                    {isProcurementMode && visibleColumns.dateOfUse && (
+                        <div className="w-[78px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] text-gray-600 font-mono shrink-0 pl-2 relative group/date">
+                            {isGroup ? '-' : (
+                                <>
+                                    <div className="flex items-center w-full pr-1">
+                                        <span
+                                            className={`truncate ${!t.dateOfUse ? 'text-gray-400' : 'text-gray-700'}`}
+                                            title={t.dateOfUse ? `Manual: ${t.dateOfUse}` : "Auto-calculated"}
+                                        >
+                                            {procurementDates.dateOfUse.replace('*', '')}
+                                            {!t.dateOfUse && '*'}
+                                        </span>
+                                        <Calendar className="w-3 h-3 text-gray-400 ml-auto flex-shrink-0" />
+                                    </div>
+                                    {onTaskUpdate && (
+                                        <input
+                                            type="date"
+                                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                            value={t.dateOfUse || ''}
+                                            onChange={(e) => onTaskUpdate(t.id, { dateOfUse: e.target.value })}
+                                            title="Click to set date"
+                                        />
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+                    {isProcurementMode && visibleColumns.duration && (
+                        <div className="w-[62px] h-full flex items-center justify-end border-l border-gray-300/70 text-[11px] text-gray-700 font-semibold font-mono shrink-0 pr-2 truncate">
+                            {isGroup ? '-' : procurementDates.durationDays}
+                        </div>
+                    )}
+                    {isProcurementMode && visibleColumns.procurementStatus && (
+                        <div className="w-[96px] h-full flex items-center justify-start border-l border-gray-300/70 shrink-0 pl-2">
+                            {isGroup ? (
+                                <span className="text-[10px] text-gray-500">-</span>
+                            ) : (
+                                onTaskUpdate ? (
+                                    <select
+                                        className={`h-5 text-[10px] font-semibold rounded px-1 border border-gray-200 bg-white ${getProcStatusClass(procurementDates.statusKey)}`}
+                                        value={procurementDates.statusKey}
+                                        onChange={(e) =>
+                                            onTaskUpdate(t.id, { procurementStatus: e.target.value as Task['procurementStatus'] })
+                                        }
+                                    >
+                                        <option value="to-order">To Order</option>
+                                        <option value="ordered">Ordered</option>
+                                        <option value="delivered">Delivered</option>
+                                        <option value="ready">Ready</option>
+                                        <option value="in-stock">In Stock</option>
+                                    </select>
+                                ) : (
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${getProcStatusClass(procurementDates.statusKey)}`}>
+                                        {procurementDates.statusLabel}
+                                    </span>
+                                )
+                            )}
                         </div>
                     )}
                     {visibleColumns.period && (
-                        <div className={`w-[180px] h-full flex items-center justify-start border-l border-gray-200 text-[10px] font-mono shrink-0 pl-2 whitespace-nowrap ${isGroup ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
+                        <div className={`w-[150px] h-full flex items-center justify-start border-l border-gray-300/70 text-[10px] font-mono shrink-0 pl-2 whitespace-nowrap ${isGroup ? 'text-gray-700 font-medium' : 'text-gray-500'}`}>
                             {displayStartDate && displayEndDate ? (
                                 <>
                                     <span>{formatDateRange(displayStartDate, displayEndDate)}</span>
-                                    {!isGroup && durationVariance !== null && durationVariance !== 0 && (
-                                        <span className={`ml-1 font-semibold ${durationVariance > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                            ({durationVariance > 0 ? `+${durationVariance}` : durationVariance})
+                                    {!isGroup && endDateVariance !== null && endDateVariance !== 0 && (
+                                        <span className={`ml-1 font-semibold ${endDateVariance > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                            {endDateVariance > 0 ? `+${endDateVariance}` : endDateVariance}
                                         </span>
                                     )}
                                 </>
@@ -332,7 +583,7 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                     )}
                     {visibleColumns.team && (
                         <div
-                            className="h-full border-l border-gray-200 shrink-0 flex items-center justify-between px-1.5 relative"
+                            className="h-full border-l border-gray-300/70 shrink-0 flex items-center justify-between px-1.5 relative"
                             style={{ width: '92px', minWidth: '92px' }}
                         >
                             <div className="flex items-center -space-x-1">
@@ -412,7 +663,7 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                         </div>
                     )}
                     {visibleColumns.progress && (
-                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-200 shrink-0 gap-1 pl-2">
+                        <div className="w-20 h-full flex items-center justify-start border-l border-gray-300/70 shrink-0 gap-1 pl-2">
                             {isGroup ? (
                                 // Groups: Show calculated progress (read-only)
                                 <>
@@ -438,7 +689,7 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                                     });
                                                 }}
                                                 className="flex items-center gap-0.5 px-1.5 py-0.5 bg-green-50 text-green-700 text-[9px] font-bold rounded border border-green-200 hover:bg-green-100 transition-colors w-[24px] justify-center"
-                                                title="เริ่มงาน"
+                                                title="Start Work"
                                             >
                                                 <span className="hidden sm:inline">GO</span>
                                                 <svg className="sm:hidden" width="7" height="7" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z" /></svg>
@@ -456,8 +707,8 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                                         e.stopPropagation();
                                                         setModalConfig({
                                                             isOpen: true,
-                                                            title: 'จบงาน (100%)',
-                                                            message: 'คุณต้องการจบงานนี้ทันทีหรือไม่? (ระบบจะบันทึกเป็น 100% ณ วันนี้)',
+                                                            title: 'Complete Task (100%)',
+                                                            message: 'Do you want to complete this task now? (This will set progress to 100% today.)',
                                                             type: 'confirm',
                                                             onConfirm: () => {
                                                                 // Use existing actualEndDate (if dragged) or Today
@@ -472,7 +723,7 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                                         });
                                                     }}
                                                     className="opacity-0 group-hover/prog-cell:opacity-100 w-[22px] flex justify-center text-gray-400 hover:text-green-600 transition-opacity"
-                                                    title="จบงาน (Complete)"
+                                                    title="Complete Task"
                                                 >
                                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                                                 </button>
@@ -482,8 +733,8 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                                                     e.stopPropagation();
                                                     setModalConfig({
                                                         isOpen: true,
-                                                        title: 'รีเซ็ตความคืบหน้า',
-                                                        message: 'คุณต้องการรีเซ็ตความคืบหน้าของงานนี้ใช่หรือไม่?',
+                                                        title: 'Reset Progress',
+                                                        message: 'Do you want to reset this task progress?',
                                                         type: 'confirm',
                                                         onConfirm: () => {
                                                             onTaskUpdate?.(t.id, {
@@ -510,14 +761,42 @@ export const TaskRow: React.FC<TaskRowProps> = ({
 
                 </div>
 
-                <div className="relative overflow-hidden" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
+                <div className="relative overflow-hidden border-l border-gray-300/90 bg-white" style={{ width: `${timeline.items.length * config.cellWidth}px` }}>
                     <div className="absolute inset-0 flex pointer-events-none">
                         {timeline.items.map((item: any, idx: number) => (
-                            <div key={idx} className={`flex-shrink-0 border-r border-dashed border-gray-200 h-full ${viewMode === 'day' && isWeekend(item) ? 'bg-gray-50' : ''
-                                } ${viewMode === 'day' && isToday(item) ? 'bg-blue-50/20' : ''}`}
+                            <div key={idx} className={`flex-shrink-0 box-border h-full
+                                ${isFourWeekView && viewMode === 'day'
+                                    ? `${Math.floor(idx / 7) % 4 === 0 ? 'bg-sky-50' : Math.floor(idx / 7) % 4 === 1 ? 'bg-rose-50' : Math.floor(idx / 7) % 4 === 2 ? 'bg-emerald-50' : 'bg-violet-50'} border-r border-slate-300/35`
+                                    : viewMode === 'week'
+                                        ? `border-r border-slate-300 ${idx % 2 === 0 ? 'bg-slate-50/60' : 'bg-white'}`
+                                        : 'border-r border-dashed border-gray-300/60'}
+                                ${viewMode === 'day' && !isFourWeekView ? (item.getDay() === 6 ? 'bg-violet-50/45' : item.getDay() === 0 ? 'bg-red-50/45' : '') : ''}
+                                ${viewMode === 'day' && isToday(item) ? 'bg-blue-50/20' : ''}`}
                                 style={{ width: config.cellWidth }} />
                         ))}
                     </div>
+
+                    {procurementMarkerDates && (
+                        <>
+                            {[
+                                { key: 'dueProcurement', date: procurementMarkerDates.dueProcurement, color: '#dc2626', title: 'Due Procurement' },
+                                { key: 'dueMaterialOnSite', date: procurementMarkerDates.dueMaterialOnSite, color: '#d97706', title: 'Material On Site' },
+                                { key: 'dateOfUse', date: procurementMarkerDates.dateOfUse, color: '#16a34a', title: 'Date Of Use' }
+                            ].map((marker) => {
+                                const left = getDateLeftPx(marker.date);
+                                const maxWidth = timeline.items.length * config.cellWidth;
+                                if (left < 0 || left > maxWidth) return null;
+                                return (
+                                    <div
+                                        key={marker.key}
+                                        className="absolute z-[22] w-1.5 h-1.5 rounded-full border border-white/80 shadow-sm pointer-events-none"
+                                        style={{ left: `${left}px`, top: '15px', marginLeft: '-3px', backgroundColor: marker.color }}
+                                        title={`${marker.title}: ${format(marker.date, 'yyyy-MM-dd')}`}
+                                    />
+                                );
+                            })}
+                        </>
+                    )}
 
                     {/* Dependency Dots & Bar Rendering */}
                     {(() => {
@@ -706,6 +985,9 @@ export const TaskRow: React.FC<TaskRowProps> = ({
                         tasks={tasks}
                         config={config}
                         viewMode={viewMode}
+                        isFourWeekView={isFourWeekView}
+                        isProcurementMode={isProcurementMode}
+                        procurementOffsets={procurementOffsets}
                         timeRange={timeRange}
                         visibleColumns={visibleColumns}
                         stickyWidth={stickyWidth}
@@ -741,3 +1023,5 @@ export const TaskRow: React.FC<TaskRowProps> = ({
         </React.Fragment >
     );
 };
+
+

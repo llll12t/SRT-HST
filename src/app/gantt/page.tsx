@@ -1,8 +1,7 @@
 'use client';
 
-import GanttClient from '@/components/gantt/GanttClient';
+import GanttPageClient from '@/features/gantt/presentation/routes/GanttPageClient';
 
 export default function GanttPage() {
-    return <GanttClient />;
+    return <GanttPageClient />;
 }
-

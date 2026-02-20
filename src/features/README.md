@@ -7,6 +7,7 @@ Current status:
 - Application gateways exist under `src/features/*/application`.
 - Core Gantt utility logic has been moved into `src/features/gantt/domain/*`.
 - `src/components/charts/gantt/utils.ts` is now a compatibility re-export layer.
+- Canonical architecture choice: `feature-based`. Legacy `src/components/*` paths remain temporary compatibility bridges.
 
 Next migration sequence:
 1. Move Gantt presentation imports from legacy `src/components/charts/gantt/*` to `src/features/gantt/presentation/*` in all consumers.

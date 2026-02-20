@@ -23,21 +23,35 @@ export const getCategoryBarStyle = (
 ) => {
   const chartStart = timeRange.start;
   const durationDays = dateRange.days;
+  const totalDays = Math.max(1, differenceInDays(timeRange.end, chartStart) + 1);
 
   const leftPx = getCoordinateX(dateRange.start, chartStart, config, viewMode);
   let widthPx = 0;
+  let chartWidthPx = 0;
 
   if (viewMode === 'day') {
     widthPx = durationDays * config.cellWidth;
+    chartWidthPx = totalDays * config.cellWidth;
   } else if (viewMode === 'week') {
     widthPx = (durationDays / 7) * config.cellWidth;
+    chartWidthPx = (totalDays / 7) * config.cellWidth;
   } else if (viewMode === 'month') {
     widthPx = (durationDays / 30.44) * config.cellWidth;
+    chartWidthPx = (totalDays / 30.44) * config.cellWidth;
+  }
+
+  const rawEndPx = leftPx + widthPx;
+  const clampedLeftPx = Math.max(0, leftPx);
+  const clampedEndPx = Math.min(chartWidthPx, rawEndPx);
+  const clampedWidthPx = clampedEndPx - clampedLeftPx;
+
+  if (clampedWidthPx <= 0) {
+    return { display: 'none' as const };
   }
 
   return {
-    left: `${leftPx}px`,
-    width: `${Math.max(8, widthPx)}px`
+    left: `${clampedLeftPx}px`,
+    width: `${Math.max(1, clampedWidthPx)}px`
   };
 };
 
@@ -125,22 +139,35 @@ export const getBarStyle = (
   const durationDays = differenceInDays(taskEnd, taskStart) + 1;
   const leftPx = getCoordinateX(taskStart, chartStart, config, viewMode);
   let widthPx = 0;
+  let chartWidthPx = 0;
 
   if (viewMode === 'day') {
     widthPx = durationDays * config.cellWidth;
+    chartWidthPx = (totalDays + 1) * config.cellWidth;
   } else if (viewMode === 'week') {
     widthPx = (durationDays / 7) * config.cellWidth;
+    chartWidthPx = ((totalDays + 1) / 7) * config.cellWidth;
   } else if (viewMode === 'month') {
     widthPx = (durationDays / 30.44) * config.cellWidth;
+    chartWidthPx = ((totalDays + 1) / 30.44) * config.cellWidth;
   }
 
-  if ((leftPx < 0 && leftPx + widthPx < 0) || (leftPx > totalDays * config.cellWidth)) {
+  if ((leftPx < 0 && leftPx + widthPx < 0) || (leftPx > chartWidthPx)) {
+    return { display: 'none' as const };
+  }
+
+  const rawEndPx = leftPx + widthPx;
+  const clampedLeftPx = Math.max(0, leftPx);
+  const clampedEndPx = Math.min(chartWidthPx, rawEndPx);
+  const clampedWidthPx = clampedEndPx - clampedLeftPx;
+
+  if (clampedWidthPx <= 0) {
     return { display: 'none' as const };
   }
 
   return {
-    left: `${leftPx}px`,
-    width: `${Math.max(4, widthPx)}px`
+    left: `${clampedLeftPx}px`,
+    width: `${Math.max(1, clampedWidthPx)}px`
   };
 };
 
